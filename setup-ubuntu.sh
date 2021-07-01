@@ -10,9 +10,8 @@
 # https://github.com/angristan/wireguard-install
 
 
-#-Vars-----------------------------------------------------------------#
+# Vars
 
-##### (Cosmetic) Color output
 RED="\033[01;31m"      # Errors
 GREEN="\033[01;32m"    # Success
 YELLOW="\033[01;33m"   # Warnings
@@ -48,8 +47,8 @@ VM='false'
 HW='false'
 VPS='false'
 
-#---------------------------------------------------------------------#
 
+# Start
 
 function isRoot() {
 	if [ "${EUID}" -ne 0 ]; then
@@ -90,7 +89,7 @@ checkOS
 
 
 function setPerms() {
-	#Applies to VM, HW, VPS
+	# Applies to VM, HW, VPS
 	echo "======================================================================"
 	if ! (grep -qx 'DIR_MODE=0750' "${ADDUSER_CONF}"); then
   		sed -i 's/DIR_MODE=0755/DIR_MODE=0750/' "${ADDUSER_CONF}"
@@ -102,7 +101,7 @@ function setPerms() {
 }
 
 function removeBrowser() {
-	#Applies to HW
+	# Applies to HW
 	echo "======================================================================"
 	FF_LOCALE=$(dpkg --list | grep "firefox-locale" | cut -d ' ' -f 3)
 
@@ -119,7 +118,7 @@ function removeBrowser() {
 
 
 function stopServices() {
-	#Applies to VM, HW
+	# Applies to VM, HW
 	echo "======================================================================"
 	(pgrep cups-browsed &>/dev/null && systemctl stop cups-browsed.service && systemctl disable cups-browsed.service)
 	(pgrep cups &>/dev/null && systemctl stop cups.service && systemctl disable cups.service)
@@ -129,7 +128,7 @@ function stopServices() {
 }
 
 function updateServices() {
-	#Applies to VPS
+	# Applies to VPS (only for Digital Ocean Agent)
 	# For OSes with systemctl:
 	# Modify the exec command
 	if [ -e '/etc/systemd/system/do-agent.service' ]; then
@@ -145,7 +144,7 @@ function updateServices() {
 }
 
 function addVBox() {
-	#Applies to HW
+	# Applies to HW
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Add Oracle's VirtualBox apt repository and key to keyring?"
 	echo ""
@@ -186,7 +185,7 @@ function addVBox() {
 }
 
 function setIpv6() {
-	#Applies to VM, HW, VPS
+	# Applies to VM, HW, VPS
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Disable IPV6?"
 	echo ""
@@ -201,7 +200,7 @@ function setIpv6() {
 }
 
 function setFirewall() {
-	#Applies to VM, HW, VPS
+	# Applies to VM, HW, VPS
 	echo "======================================================================"
 	echo "Would you like to modify the firewall rules?"
 	echo -e "${YELLOW}[i]${RESET}WARNING: risk of lock-out if this is a remote connection."
@@ -247,7 +246,7 @@ function setFirewall() {
 }
 
 function updatePackages() {
-	#Applies to VM, HW, VPS
+	# Applies to VM, HW, VPS
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Updating packages."
 	apt update
@@ -259,7 +258,7 @@ function updatePackages() {
 }
 
 function installPackages() {
-	#Applies to VM, HW, VPS
+	# Applies to VM, HW, VPS
 	
 	echo -e ""
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
@@ -278,9 +277,9 @@ function installPackages() {
 }
 
 function addGroups() {
-	#Applies to VM
+	# Applies to VM
 
-	#Monitor && log execution of this or don't enable it.
+	# Monitor && log execution of this or don't enable it.
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Allow Wireshark to capture traffic?"
 	echo -e "${BOLD}This runs dpkg-reconfigure wireshark-common twice.${RESET}"
@@ -301,8 +300,8 @@ function addGroups() {
 }
 
 function removeGroups() {
-	#Applies to VM, HW, VPS
-	#Adjusts default user's groups to prevent non-root processes from reading system log files.
+	# Applies to VM, HW, VPS
+	# Adjusts default user's groups to prevent non-root processes from reading system log files.
 	if (groups "${UID1000}" | grep -q ' adm '); then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}Removing user ${UID1000} from administrative groups (adm)."
@@ -311,9 +310,9 @@ function removeGroups() {
 }
 
 function setPostfix() {
-	#Applies to VM, HW, VPS
+	# Applies to VM, HW, VPS
 	echo "======================================================================"
-	#Prevents the postfix service from flagging the system as degraded if it's not configured.
+	# Prevents the postfix service from flagging the system as degraded if it's not configured.
 	if [ -e '/etc/systemd/system/multi-user.target.wants/postfix.service' ]; then
 		echo -e "${BLUE}[-]${RESET}Disabling postfix.service.${RESET}"
 		systemctl disable postfix.service
@@ -323,9 +322,9 @@ function setPostfix() {
 }
 
 function setAIDE() {
-	#Applies to VPS
+	# Applies to VPS
 	
-	#Stops cron daily execution from altering database
+	# Stops cron daily execution from altering database
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Checking aide's cron.daily execution (disabled, enable manually)."
 	chmod -x '/etc/cron.daily/aide'
@@ -339,9 +338,9 @@ function setAIDE() {
 }
 
 function setRkhunter() {
-	#Applies to VM, HW, VPS
+	# Applies to VM, HW, VPS
 
-	#Stops cron daily execution from altering database
+	# Stops cron daily execution from altering database
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Checking rkhunter's cron.daily execution (disabled, enable manually)."
 	chmod -x '/etc/cron.daily/rkhunter'
@@ -364,10 +363,10 @@ function setRkhunter() {
 }
 
 function setSSH() {
-	#Applies to VPS
+	# Applies to VPS
 	echo "======================================================================"
 	if ! (grep -q -x 'PasswordAuthentication no' "${SSHD_CONF}"); then
-		#Removes example entry at the bottom of sshd_config
+		# Removes example entry at the bottom of sshd_config
 		sed -i 's/^PasswordAuthentication yes$//g' "${SSHD_CONF}"
 		sed -i 's/^.*PasswordAuthentication .*$/PasswordAuthentication no/g' "${SSHD_CONF}" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH password authentication."
 	fi
@@ -429,7 +428,7 @@ function setSSH() {
 }
 
 function blockFirewire() {
-	#Applies to HW
+	# Applies to HW
 
 	echo "# Select the legacy firewire stack over the new CONFIG_FIREWIRE one.
 
@@ -446,7 +445,7 @@ blacklist firewire-core" >'/etc/modprobe.d/blacklist-firewire.conf'
 }
 
 function blockThunderbolt() {
-	#Applies to HW
+	# Applies to HW
 	if [ -e '/etc/modprobe.d/blacklist-thunderbolt.conf' ]; then
 		echo -e "${YELLOW}"'[!]'"${RESET}${BOLD}/etc/modprobe.d/blacklist-thunderbolt.conf already exists.${RESET}" 
 		echo -e "${YELLOW}"'[!]'"${RESET}Holding current configuration for review."
@@ -461,9 +460,9 @@ blacklist thunderbolt" >'/etc/modprobe.d/blacklist-thunderbolt.conf'
 }
 
 function blockKmods() {
-	#Applies to HW
+	# Applies to HW
 
-	#This needs fixed in case a blacklist-thunderbolt.conf ever ships by default
+	# This needs fixed in case a blacklist-thunderbolt.conf ever ships by default
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Block thunderbolt and firewire kernel modules?" 
 	echo "(prevents connected devices from loading)"
@@ -541,7 +540,7 @@ function setLockdown() {
 }
 
 function setGnupg() {
-	#Applies to VM,HW
+	# Applies to VM,HW
 	if ! [ -e "${HOME_DIR}"/.gnupg/gpg.conf ]; then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}GnuPG"
@@ -591,7 +590,7 @@ gpgconf --launch gpg-agent' >>"${HOME_DIR}"/.bashrc
 }
 
 function updateAppArmor() {
-	#Applies to VM
+	# Applies to VM
 	echo "======================================================================"
 	if [ -e "/etc/apparmor.d/disable/usr.bin.firefox" ]; then
 		rm /etc/apparmor.d/disable/usr.bin.firefox
@@ -616,13 +615,13 @@ function updateAppArmor() {
 }
 
 function setPolicies() {
-	#Applies to VM
+	# Applies to VM
 
-	#Policy files
+	# Policy files
 	FF_CFG="firefox.cfg"
 	FF_AUTOJS="autoconfig.js"
 	FF_POLICY_JSON="policies.json"
-	#Install policies
+	# Install policies
 	echo -e "${BLUE}[i]${RESET}Checking Firefox policy files."
 
 	if ! [ -e "/usr/lib/firefox/${FF_CFG}" ] && [ "${VM}" = "true" ]; then
@@ -871,7 +870,7 @@ function setAuditing() {
 	echo -e "${BLUE}[✓]${RESET}auditd rules won't be locked & immutable until ${BOLD}after${RESET} next reboot."
 }
 
-#Command-Line-Arguments
+# Command-Line-Arguments
 function manageMenu() {
 	echo ""
 	echo "Welcome to the Ubuntu setup script!"
