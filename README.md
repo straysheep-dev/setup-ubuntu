@@ -21,3 +21,6 @@ Then:
 $ ssh-add ~/.ssh/id_rsa
 Identity added: /home/test/.ssh/id_rsa (test@test)
 ```
+## To do:
+
+- [ ] Make these changes reversable after running
