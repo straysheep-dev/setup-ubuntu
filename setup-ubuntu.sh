@@ -645,24 +645,28 @@ function setPolicies() {
 
 
 function makeTemp() {
-	echo "======================================================================"
 	export SETUPAUDITDIR=$(mktemp -d)
 	if (ls -l | grep -q "40-.*.rules"); then
 		cp 40-*.rules $SETUPAUDITDIR
-		cd $SETUPAUDITDIR
-		echo -e "${BLUE}[i]${RESET}Changing working directory to $SETUPAUDITDIR"
 	fi
+	cd $SETUPAUDITDIR
+	echo ""
+	echo -e "${BLUE}[i]${RESET}Changing working directory to $SETUPAUDITDIR"
+
 }
 
 function checkCurrentRules() {
 	# Save any potentialy custom rules
-	if $(ls "${AUDIT_RULES_D}" | grep -q "40-.*.rules"); then
-
-		echo -e "${BLUE}[i]${RESET}Possibly found custom rule file(s):"
-		echo "$(ls ${AUDIT_RULES_D} | grep 40-.*.rules)"
+	if $(ls "${AUDIT_RULES_D}" | grep -q ".rules"); then
+		echo "======================================================================"
+		echo -e "${BLUE}[i]${RESET}Custom rule file(s) discovered:"
+		echo "$(ls ${AUDIT_RULES_D} | grep 40-.*.rules || echo 'none')"
+		echo ""
+		echo -e "${RED}[i]${RESET}NOTE: Proceeding removes all currently installed rules."
+		echo -e "${RED}[i]${RESET}Ctrl+C here to abort"
 		echo ""
 		until [[ $MERGE_CURRENT_RULE =~ (y|n) ]]; do
-			read -rp "Merge thses rules into next rule set? [y/n]: " MERGE_CURRENT_RULE
+			read -rp "Merge current custom rule files into next rule set? [y/n]: " -e -i n MERGE_CURRENT_RULE
 		done
 		if [[ $MERGE_CURRENT_RULE == "n" ]]; then
 			rm ${AUDIT_RULES_D}*
@@ -728,22 +732,26 @@ function setSiteRules() {
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Set site-specific rules"
 	echo "The default policy templates that ship with auditd include:"
-	echo -e "${BOLD}	NISPOM | OSPP | PCI | STIG${RESET}"
-	echo "If unsure, STIG complements the MITRE rules in this setup"
+	echo -e "${BOLD}	nispom | ospp | pci | stig | none${RESET}"
+	echo "If not using custom rules, stig is a good choice"
+	echo "If custom rules will be installed, choosing none is recommended"
 	echo ""
-	until [[ $SITE_RULES =~ (nispom|ospp|pci|stig) ]]; do
-			read -rp "Enter a choice (lowercase): " -e -i stig SITE_RULES
+	until [[ $SITE_RULES =~ (nispom|ospp|pci|stig|none) ]]; do
+			read -rp "Enter a choice (lowercase): " -e -i none SITE_RULES
 	done
 }
 
 function checkLocalRules() {
+	# Check to make sure user's custom/local rules are present 
+	if [[ ${SITE_RULES} == 'none' ]]; then
+		if ! (ls | grep -q '40-'); then
+			echo -e "${RED}[i]${RESET}No custom rules found in CWD, quitting."
+			exit 1
+		fi
+	fi
 	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}${BOLD}Ensure all custom rule files follow this naming convention:" 
-	echo -e "		 40-<name>.rules"
-	echo -e "        EXAMPLE: 40-foo.rules"
-	echo ""
-	echo -e "${BLUE}[i]${RESET}Auditd expects custom rules to be named ${BOLD}'40-*.rules'${RESET}"
-	echo -e "${BLUE}[i]${RESET}Be sure all rules are compatible before proceeding."
+	echo -e "${BLUE}[i]${RESET}Auditd expects custom rules to be named ${BOLD}'40-<name>.rules'${RESET}"
+	echo -e "${BLUE}[i]${RESET}Be sure all rules are compatible and in the CWD before proceeding."
 	echo -e "${BLUE}[i]${RESET}If needed, Ctrl+c quit here to make changes, then rerun this script."
 	echo ""
 	until [[ ${COMBINE_RULES_OK} =~ ^(OK)$ ]]; do
@@ -757,14 +765,14 @@ function collectAllRules() {
 	BASE="${AUDIT_DOCS}10-base-config.rules"
 	LOGINUID="${AUDIT_DOCS}11-loginuid.rules"
 	NO32BIT="${AUDIT_DOCS}21-no32bit.rules"
-	LOCAL="${AUDIT_DOCS}40-local.rules"
+	LOCAL="$(pwd)/40-*.rules"
 	CONTAINER="${AUDIT_DOCS}41-containers.rules"
 	INJECT="${AUDIT_DOCS}42-injection.rules"
 	KMOD="${AUDIT_DOCS}43-module-load.rules"
 	NET="${AUDIT_DOCS}71-networking.rules"
 	FIN="${AUDIT_DOCS}99-finalize.rules"
 
-	cp "${BASE}" "${LOGINUID}" "${NO32BIT}" "${LOCAL}" "${CONTAINER}" "${INJECT}" "${KMOD}" "${NET}" "${FIN}" .
+	cp "${BASE}" "${LOGINUID}" "${NO32BIT}" "${CONTAINER}" "${INJECT}" "${KMOD}" "${NET}" "${FIN}" .
 
 	# Site rules need gathered separately, too many ospp rules for one variable?
 	if [[ ${SITE_RULES} == 'nispom' ]]; then
@@ -775,11 +783,18 @@ function collectAllRules() {
 		cp "${AUDIT_DOCS}"30-ospp*.rules* .
 	elif [[ ${SITE_RULES} == 'stig' ]]; then
 		cp "${AUDIT_DOCS}"30-stig*.rules* .
+	elif [[ ${SITE_RULES} == 'none' ]]; then
+		echo "## Site specific rules placeholder file" > 30-site.rules
 	fi
 
 	# Gunzip package rules if they're archived
 	if [ -e *.rules.gz ]; then
 		gunzip *.rules.gz
+	fi
+	
+	# Use default local rules placeholder if none / no custom rules are present
+	if ! (ls | grep -q '40-'); then
+		cp "${AUDIT_DOCS}40-local.rules" .
 	fi
 }
 
@@ -804,25 +819,22 @@ function applySettings() {
 function adjustRules() {
 	# Make any adjustments to the built in rule files from /usr/share/**rules here
 	# This will need a better solution going forward
-
-	# Adjust default stig rules
-	if [ -e 30-stig.rules ]; then
-		sed -i 's/^-.*system-locale$/x&/g' "30-stig.rules" && \
-		sed -i 's/^-.*key=access$/x&/g' "30-stig.rules" && \
-		sed -i 's/^-/#-/g' "30-stig.rules" && \
-		sed -i 's/^x-/-/g' "30-stig.rules" && \
-		sed -i 's/key=access/key=failed-access/g' "30-stig.rules"
-		if (which apparmor_parser); then
-			sed -i 's/## Things that could affect MAC policy/## Things that could affect MAC policy\n-a always,exit -F dir=\/etc\/apparmor\/ -F perm=wa -F key=MAC-policy\n-a always,exit -F dir=\/etc\/apparmor.d\/ -F perm=wa -F key=MAC-policy\n-w \/sbin\/apparmor_parser -p wxa -k MAC-policy/' "30-stig.rules"
-		fi
+	
+	# Offer to comment out non-essential built in rules if using a local/custom rules file
+	if [[ ${SITE_RULES} == 'none' ]]; then
+		echo "To avoid overlap with custom rules, would you like"
+		echo "comment out the non-essential built in rules?"
+		echo ""
+		until [[ $COMMENT_BUILTINS =~ (y|n) ]]; do
+			read -rp "[y/n]?: " -e -i y COMMENT_BUILTINS
+		done
 	fi
-
-	# Log all networking syscalls (noisy)
-	sed -i 's/-a/#-a/' "71-networking.rules"
-	echo -e "\n#Log 64 bit processes (a2!=6e filters local unix socket calls)" >> "71-networking.rules" && \
-	echo -e "-a exit,always -F arch=b64 -S connect -F a2!=110 -k 64b_Outbound_Connection" >> "71-networking.rules" && \
-	echo -e "\n#Log 32 bit processes (a0=3 means only outbound sys_connect calls)" >> "71-networking.rules" && \
-	echo -e "-a exit,always -F arch=b32 -S socketcall -F a0=3 -k 32b_Outbound_Connection" >> "71-networking.rules"
+	if [[ $COMMENT_BUILTINS == 'y' ]]; then
+		sed -i 's/^-a/#-a/' "21-no32bit.rules"
+		sed -i 's/^-a/#-a/' "42-injection.rules"
+		sed -i 's/^-a/#-a/' "43-module-load.rules"
+		sed -i 's/^-a/#-a/' "71-networking.rules"
+	fi
 }
 
 function setAuditing() {
@@ -861,21 +873,22 @@ function setAuditing() {
 
 	# Check for any errors
 	echo ""
-	echo -e "${BLUE}[i]${RESET}Running augenrules --check"
+	echo -e "${GREEN}[i]${RESET}Running augenrules --check"
 	augenrules --check 2>&1
-	echo -e "${BLUE}[i]${RESET}Running augenrules --load to update rules"
+	echo -e "${GREEN}[i]${RESET}Running augenrules --load to update rules"
 	augenrules --load 2>&1
+	echo "======================================================================"
+	echo -e "${BLUE}[^]${RESET}Any errors above this line should be fixed in their rule file"
+	echo -e "${BLUE}[^]${RESET}Review the line numbers called out in /etc/audit/audit.rules"
+	echo -e "${BLUE}[^]${RESET}Rerun this script choosing to NOT merge the current (broken) rules"
 
 	echo ""
 	echo -e "${BLUE}[>]${RESET}${BOLD}Log format = ${LOG_FORMAT}${RESET}"
 	echo -e "${BLUE}[>]${RESET}${BOLD}Log file size = ${LOG_SIZE}MB${RESET}"
 	echo -e "${BLUE}[>]${RESET}${BOLD}Number of logs = ${NUM_LOGS}${RESET}"
 	echo -e "${BLUE}[>]${RESET}${BOLD}Buffer size = ${BUFFER_SIZE}${RESET}"
-	if [ "${VPS}" = "true" ]; then
-		echo -e "${BLUE}[>]${RESET}${BOLD}SSH Port = ${PORT}${RESET}"
-	fi
 	echo ""
-	echo -e "${BLUE}[✓]${RESET}auditd rules won't be locked & immutable until ${BOLD}after${RESET} next reboot."
+	echo -e "${BLUE}[✓]${RESET}Done. Reminder: auditd rules aren't locked until ${BOLD}after${RESET} next reboot."
 }
 
 # Command-Line-Arguments
