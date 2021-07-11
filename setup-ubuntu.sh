@@ -59,6 +59,14 @@ function isRoot() {
 
 isRoot
 
+function checkCwd() {
+	if  ! [ -e 'setup-ubuntu.sh' ]; then
+		echo "To avoid issues, execute this script from it's current working directory. Quitting."
+		exit 1
+	fi
+}
+checkCwd
+
 function checkOS() {
 	# Check OS version
 	source /etc/os-release
