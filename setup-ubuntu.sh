@@ -780,7 +780,7 @@ function collectAllRules() {
 	elif [[ ${SITE_RULES} == 'pci' ]]; then
 		cp "${AUDIT_DOCS}"30-pci*.rules* .
 	elif [[ ${SITE_RULES} == 'ospp' ]]; then
-		cp "${AUDIT_DOCS}"30-ospp*.rules* .
+		cp "${AUDIT_DOCS}"$(ls "${AUDIT_DOCS}" | grep "30-ospp-v[0-9][0-9].rules*") .
 	elif [[ ${SITE_RULES} == 'stig' ]]; then
 		cp "${AUDIT_DOCS}"30-stig*.rules* .
 	elif [[ ${SITE_RULES} == 'none' ]]; then
@@ -791,7 +791,7 @@ function collectAllRules() {
 	if [ -e *.rules.gz ]; then
 		gunzip *.rules.gz
 	fi
-	
+
 	# Use default local rules placeholder if none / no custom rules are present
 	if ! (ls | grep -q '40-'); then
 		cp "${AUDIT_DOCS}40-local.rules" .
@@ -819,7 +819,7 @@ function applySettings() {
 function adjustRules() {
 	# Make any adjustments to the built in rule files from /usr/share/**rules here
 	# This will need a better solution going forward
-	
+
 	# Offer to comment out non-essential built in rules if using a local/custom rules file
 	if [[ ${SITE_RULES} == 'none' ]]; then
 		echo "To avoid overlap with custom rules, would you like"
@@ -866,7 +866,7 @@ function setAuditing() {
 			echo -e "${RED}[!]Missing ${RULE}, and cannot locate rule file to install.${RESET}"
 		fi
 	done
-	
+
 	# Cleanup
 	cd /tmp && \
 	rm -rf $SETUPAUDITDIR
