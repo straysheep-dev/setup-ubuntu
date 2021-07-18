@@ -643,7 +643,6 @@ function setPolicies() {
 	fi
 }
 
-
 function makeTemp() {
 	export SETUPAUDITDIR=$(mktemp -d)
 	if (ls -l | grep -q "40-.*.rules"); then
@@ -656,25 +655,26 @@ function makeTemp() {
 }
 
 function checkCurrentRules() {
-	# Save any potentialy custom rules
+	# Check for any currently installed rules
 	if $(ls "${AUDIT_RULES_D}" | grep -q ".rules"); then
 		echo "======================================================================"
-		echo -e "${BLUE}[i]${RESET}Custom rule file(s) discovered:"
-		echo "$(ls ${AUDIT_RULES_D} | grep 40-.*.rules || echo 'none')"
+		echo -e "${RED}[-]${RESET}Current rule file(s) to remove:"
+		echo "$(ls ${AUDIT_RULES_D} | grep '.rules' || echo 'none')"
 		echo ""
-		echo -e "${RED}[i]${RESET}NOTE: Proceeding removes all currently installed rules."
+		echo -e "${GREEN}[+]${RESET}Custom rule file(s) to be installed:"
+		echo "$(ls ${SETUPAUDITDIR} | grep '.rules' || echo 'none')"
+		echo ""
+		echo -e "${RED}[i]${RESET}NOTE: Proceeding erases all currently installed rules."
+		echo -e "${RED}[i]${RESET}Copy any custom rules to CWD to reinstall them."
 		echo -e "${RED}[i]${RESET}Ctrl+C here to abort"
 		echo ""
-		until [[ $MERGE_CURRENT_RULE =~ (y|n) ]]; do
-			read -rp "Merge current custom rule files into next rule set? [y/n]: " -e -i n MERGE_CURRENT_RULE
+		until [[ $CONTINUE_SETUP =~ ^(y|n)$ ]]; do
+			read -rp "Continue with setup? [y/n]: " CONTINUE_SETUP
 		done
-		if [[ $MERGE_CURRENT_RULE == "n" ]]; then
-			rm ${AUDIT_RULES_D}*
-		elif [[ $MERGE_CURRENT_RULE == "y" ]]; then
-			echo "##-------- Begin previously installed local rules --------" > 40-current-rules-to-merge.rules
-			cat "${AUDIT_RULES_D}"40-*.rules >> 40-current-rules-to-merge.rules
-			echo "##-------- End previously installed local rules --------" >> 40-current-rules-to-merge.rules
-			rm ${AUDIT_RULES_D}*
+		if [[ $CONTINUE_SETUP == "n" ]]; then
+			exit 1
+		elif [[ $CONTINUE_SETUP == "y" ]]; then
+			rm ${AUDIT_RULES_D}* 2>/dev/null
 		fi
 	# Reset all other rules
 	else
@@ -684,7 +684,7 @@ function checkCurrentRules() {
 
 function setLogFormat() {
 	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set the logging format"
+	echo -e "${BLUE}[i]${RESET}Set the logging ${BOLD}format${RESET}"
 	echo -e "${BOLD}RAW${RESET} = Machine-readable"
 	echo -e "${BOLD}ENRICHED${RESET} = Human-readable"
 	echo ""
@@ -696,20 +696,19 @@ function setLogFormat() {
 function setLogSize() {
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Set the ${BOLD}file size${RESET} of each log"
+	echo -e "${BLUE}[i]${RESET}The default size works well in most cases"
 	echo -e "${BLUE}[i]${RESET}Default setting: ${BOLD}8${RESET} (8MB)"
 	echo ""
 	until [[ $LOG_SIZE =~ ^[0-9]+$ ]] && [ "$LOG_SIZE" -ge 1 ] && [ "$LOG_SIZE" -le 50 ]; do
-		read -rp "max_log_file = " -e -i 8 LOG_SIZE
+		read -rp "max_log_file (MB) = " -e -i 8 LOG_SIZE
 	done
 }
 
 function setLogNumber() {
 	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set the number of log files to maintain locally"
+	echo -e "${BLUE}[i]${RESET}Set the ${BOLD}number of log files${RESET} to maintain locally"
+	echo -e "${BLUE}[i]${RESET}Use more if you aren't shipping to a central logging server."
 	echo -e "${BLUE}[i]${RESET}Default setting: ${BOLD}8${RESET}"
-	echo ""
-	echo "NOTE: use more than 8 logs if you are unable to ship"
-	echo "them to a central logging server." 
 	echo ""
 	until [[ $NUM_LOGS =~ ^[0-9]+$ ]] && [ "$NUM_LOGS" -ge 1 ] && [ "$NUM_LOGS" -le 65535 ]; do
 		read -rp "num_logs = " -e -i 8 NUM_LOGS
@@ -718,11 +717,10 @@ function setLogNumber() {
 
 function setBuffer() {
 	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set auditd's buffer size"
+	echo -e "${BLUE}[i]${RESET}Set auditd's ${BOLD}buffer size${RESET}"
 	echo -e "${BLUE}[i]${RESET}For busy systems, increase and test this number"
 	echo -e "${BLUE}[i]${RESET}Default setting: ${BOLD}8192${RESET}"
 	echo ""
-	echo "NOTE: 8192 is a good choice for workstations."
 	until [[ $BUFFER_SIZE =~ ^[0-9]+$ ]] && [ "$BUFFER_SIZE" -ge 1 ] && [ "$BUFFER_SIZE" -le 65535 ]; do
 		read -rp "buffer_size (-b) = " -e -i 8192 BUFFER_SIZE
 	done
@@ -736,7 +734,7 @@ function setSiteRules() {
 	echo "If not using custom rules, stig is a good choice"
 	echo "If custom rules will be installed, choosing none is recommended"
 	echo ""
-	until [[ $SITE_RULES =~ (nispom|ospp|pci|stig|none) ]]; do
+	until [[ $SITE_RULES =~ ^(nispom|ospp|pci|stig|none)$ ]]; do
 			read -rp "Enter a choice (lowercase): " -e -i none SITE_RULES
 	done
 }
