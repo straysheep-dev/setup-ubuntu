@@ -80,7 +80,7 @@ function checkOS() {
 			echo ""
 			echo "However, if you're using Ubuntu >= 16.04 or beta, then you can continue, at your own risk."
 			echo ""
-			until [[ $CONTINUE =~ (y|n) ]]; do
+			until [[ $CONTINUE =~ ^(y|n)$ ]]; do
 				read -rp "Continue? [y/n]: " -e CONTINUE
 			done
 			if [[ $CONTINUE == "n" ]]; then
@@ -156,7 +156,7 @@ function addVBox() {
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Add Oracle's VirtualBox apt repository and key to keyring?"
 	echo ""
-	until [[ $VBOX_CHOICE =~ (y|n) ]]; do
+	until [[ $VBOX_CHOICE =~ ^(y|n)$ ]]; do
 		read -rp "[y/n]: " VBOX_CHOICE
 	done
 
@@ -176,7 +176,7 @@ function addVBox() {
 		echo -e "${BLUE}[i]${RESET}Looks like the VirtualBox gpg key is present."
 		echo "Remove Oracle's VirtualBox apt repository and key from keyring?"
 		echo ""
-		until [[ $REMOVE_VBOX =~ (y|n) ]]; do
+		until [[ $REMOVE_VBOX =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]: " REMOVE_VBOX
 		done
 
@@ -197,29 +197,28 @@ function setIpv6() {
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Disable IPV6?"
 	echo ""
-	until [[ $IPV6_CHOICE =~ (y|n) ]]; do
+	until [[ $IPV6_CHOICE =~ ^(y|n)$ ]]; do
 		read -rp "[y/n]: " IPV6_CHOICE
 	done
 	if [[ $IPV6_CHOICE == "y" ]]; then
-		sed -i 's/^IPV6=yes$/IPV6=no/' /etc/default/ufw
+		sed -i 's/^IPV6=yes$/IPV6=no/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
 	elif [[ $IPV6_CHOICE == "n" ]] && (grep -qx 'IPV6=no' /etc/default/ufw) ; then
-		sed -i 's/^IPV6=no$/IPV6=yes/' /etc/default/ufw
+		sed -i 's/^IPV6=no$/IPV6=yes/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
 	fi
 }
 
 function setFirewall() {
 	# Applies to VM, HW, VPS
 	echo "======================================================================"
-	echo "Would you like to modify the firewall rules?"
-	echo -e "${YELLOW}[i]${RESET}WARNING: risk of lock-out if this is a remote connection."
+	echo -e "${BLUE}[i]${RESET}Modify the firewall rules?"
 	echo ""
-	echo -e "${RED}[i]${RESET}(choose 'y' if you've changed ipv6 settings above)"
-	until [[ $UFW_CHOICE =~ (y|n) ]]; do
+	echo -e "${RED}[i]${RESET}(choose 'y' if the ipv6 settings were just changed)"
+	until [[ $UFW_CHOICE =~ ^(y|n)$ ]]; do
 		read -rp "[y/n]: " UFW_CHOICE
 	done
 	if [[ $UFW_CHOICE == "y" ]]; then
 
-		echo -e "${BLUE}[i]${RESET}Setting up firewall egress policy (answer 'y' below to continue)."
+		echo -e "${BLUE}[i]${RESET}${BOLD}Resetting firewall rules. Answer 'y' to avoid errors${RESET}."
 		ufw reset
 		
 		# ipv4
@@ -288,23 +287,29 @@ function addGroups() {
 	# Applies to VM
 
 	# Monitor && log execution of this or don't enable it.
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Allow Wireshark to capture traffic?"
-	echo -e "${BOLD}This runs dpkg-reconfigure wireshark-common twice.${RESET}"
-	echo -e "Answering 'yes' then 'no' will create the system group without permitting capture"
-	echo ""
-	until [[ ${WIRESHARK_CHOICE} =~ (y|n) ]]; do
-		read -rp "[y/n]: " WIRESHARK_CHOICE
-	done
-	if [[ $WIRESHARK_CHOICE == "y" ]]; then
-		dpkg-reconfigure wireshark-common
-		echo -e "${BLUE}[i]${RESET}Adding user ${UID1000} to group 'wireshark'."
-		sleep 2
-		if ! (groups "${UID1000}" | grep -q wireshark); then
-			usermod -a -G wireshark "${UID1000}"
-		fi
-		dpkg-reconfigure wireshark-common
+	if (grep -q 'wireshark' /etc/group); then
+		echo "======================================================================"
+		echo -e "${BLUE}[i]${RESET}Add ${UID1000} to wireshark group?"
+		echo ""
+		until [[ ${WIRESHARK_CHOICE} =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " WIRESHARK_CHOICE
+		done
 	fi
+	if [[ $WIRESHARK_CHOICE == "y" ]]; then
+		usermod -a -G wireshark "${UID1000}"
+		echo "Done."
+		sleep 1
+	elif [[ $WIRESHARK_CHOICE == "n" ]] && (groups "${UID1000}" | grep -q wireshark); then
+		echo -e "${BLUE}[i]${RESET}Remove ${UID1000} from wireshark group?"
+		until [[ ${WIRESHARK_REMOVE} =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " WIRESHARK_REMOVE
+		done
+		
+		if [[ $WIRESHARK_REMOVE == "y" ]]; then
+			deluser "${UID1000}" wireshark
+		fi
+	fi
+	
 }
 
 function removeGroups() {
@@ -423,7 +428,7 @@ function setSSH() {
 	echo "after this script completes, and before exiting this current"
 	echo "session."
 	echo ""
-	until [[ $SSHD_RESTART_CHOICE =~ (y|n) ]]; do
+	until [[ $SSHD_RESTART_CHOICE =~ ^(y|n)$ ]]; do
 		read -rp "[y/n]: " SSHD_RESTART_CHOICE
 	done
 	if [[ $SSHD_RESTART_CHOICE == "y" ]]; then
@@ -433,6 +438,7 @@ function setSSH() {
 	fi
 
 	echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review any and all firewall rules before disonnecting from this session.${RESET}"
+	sleep 3
 }
 
 function blockFirewire() {
@@ -475,7 +481,7 @@ function blockKmods() {
 	echo -e "${BLUE}[i]${RESET}Block thunderbolt and firewire kernel modules?" 
 	echo "(prevents connected devices from loading)"
 	echo ""
-	until [[ $KMOD_CHOICE =~ (y|n) ]]; do
+	until [[ $KMOD_CHOICE =~ ^(y|n)$ ]]; do
 		read -rp "[y/n]: " KMOD_CHOICE
 	done
 
@@ -522,27 +528,25 @@ function setLockdown() {
 	if ! (mokutil --sb-state | grep -qx 'SecureBoot enabled'); then
 		echo ""
 		echo -e "${BLUE}[i]${RESET}SecureBoot is not enabled."
-		echo -e "${BLUE}[i]${RESET}Update kernel lockdown mode? (modifies GRUB_CMDLINE_LINUX in /etc/default/grub)"
 		echo -e "${BLUE}[i]${RESET}Current state: "
-		if (cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]"); then
+		echo $(cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]")
+		echo ""
+		echo -e "${BLUE}[i]${RESET}Enable kernel lockdown mode?"
+		until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "CHOOSE NO IF YOU HAVE NOT TESTED THIS [y/n]: " LOCKDOWN_CHOICE
+		done
+		if [[ $LOCKDOWN_CHOICE == "y" ]]; then
 			echo ""
-			until [[ $LOCKDOWN_CHOICE =~ (y|n) ]]; do
-				read -rp "[y/n]: " LOCKDOWN_CHOICE
+			echo "Which mode?"
+			echo ""
+			until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
+				read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
 			done
-			if [[ $LOCKDOWN_CHOICE == "y" ]]; then
-
-				echo ""
-				echo "Which mode?"
-				echo ""
-				until [[ $LOCKDOWN_MODE =~ (none|integrity|confidentiality) ]]; do
-					read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
-				done
-
-				sed -i 's/GRUB_CMDLINE_LINUX=".*"/GRUB_CMDLINE_LINUX="lockdown='"${LOCKDOWN_MODE}"'"/g' /etc/default/grub
-				echo -e "${BLUE}[i]${RESET}Updating grub..."
-				sudo update-grub
-				echo -e "${BLUE}[i]${RESET}Lockdown mode changes won't take effect until next reboot."
-			fi
+			echo ""
+			echo -e "${BLUE}[i]${RESET}Updating line 'GRUB_CMDLINE_LINUX' in /etc/default/grub"
+			sed -i 's/GRUB_CMDLINE_LINUX=".*"/GRUB_CMDLINE_LINUX="lockdown='"${LOCKDOWN_MODE}"'"/g' /etc/default/grub
+			sudo update-grub
+			echo -e "${BLUE}[i]${RESET}Lockdown mode changes won't take effect until next reboot."
 		fi
 	fi
 }
@@ -554,7 +558,7 @@ function setGnupg() {
 		echo -e "${BLUE}[i]${RESET}GnuPG"
 		echo "Harden gpg.conf and add smart card support for ssh to .bashrc file?"
 		echo ""
-		until [[ $GPG_CHOICE =~ (y|n) ]]; do
+		until [[ $GPG_CHOICE =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]: " GPG_CHOICE
 		done
 		if [[ $GPG_CHOICE == "y" ]]; then
@@ -658,15 +662,15 @@ function checkCurrentRules() {
 	# Check for any currently installed rules
 	if $(ls "${AUDIT_RULES_D}" | grep -q ".rules"); then
 		echo "======================================================================"
-		echo -e "${RED}[-]${RESET}Current rule file(s) to remove:"
+		echo -e "${RED}[-]${RESET}Currently installed auditd rule file(s) to remove:"
 		echo "$(ls ${AUDIT_RULES_D} | grep '.rules' || echo 'none')"
 		echo ""
-		echo -e "${GREEN}[+]${RESET}Custom rule file(s) to be installed:"
+		echo -e "${GREEN}[+]${RESET}Custom auditd rule file(s) to be installed:"
 		echo "$(ls ${SETUPAUDITDIR} | grep '.rules' || echo 'none')"
 		echo ""
-		echo -e "${RED}[i]${RESET}NOTE: Proceeding erases all currently installed rules."
-		echo -e "${RED}[i]${RESET}Copy any custom rules to CWD to reinstall them."
-		echo -e "${RED}[i]${RESET}Ctrl+C here to abort"
+		echo -e "${BLUE}[i]${RESET}Proceeding erases all currently installed rules."
+		echo -e "${BLUE}[i]${RESET}To keep any custom rules currently installed, copy them now to"
+		echo "   the directory this script was started from before continuing."
 		echo ""
 		until [[ $CONTINUE_SETUP =~ ^(y|n)$ ]]; do
 			read -rp "Continue with setup? [y/n]: " CONTINUE_SETUP
@@ -740,20 +744,21 @@ function setSiteRules() {
 }
 
 function checkLocalRules() {
-	# Check to make sure user's custom/local rules are present 
+	# Check to make sure user's custom/local rules are present if no site rules chosen
 	if [[ ${SITE_RULES} == 'none' ]]; then
 		if ! (ls | grep -q '40-'); then
-			echo -e "${RED}[i]${RESET}No custom rules found in CWD, quitting."
+			echo -e "${RED}[i]${RESET}No site rules were chosen and no custom rules are present. Quitting."
 			exit 1
 		fi
 	fi
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Auditd expects custom rules to be named ${BOLD}'40-<name>.rules'${RESET}"
-	echo -e "${BLUE}[i]${RESET}Be sure all rules are compatible and in the CWD before proceeding."
-	echo -e "${BLUE}[i]${RESET}If needed, Ctrl+c quit here to make changes, then rerun this script."
+	echo -e "${BLUE}[i]${RESET}Be sure all rules are compatible and present in the directory this script was started in."
+	echo -e "${BLUE}[i]${RESET}Because this script copies all components to a temporary directory, to"
+	echo -e "${BLUE}[i]${RESET}make changes to any custom rules, Ctrl+c quit here, then rerun this script."
 	echo ""
-	until [[ ${COMBINE_RULES_OK} =~ ^(OK)$ ]]; do
-		read -rp "Type 'OK' then press enter to continue > " COMBINE_RULES_OK
+	until [[ ${RULES_OK} =~ ^(OK)$ ]]; do
+		read -rp "Type 'OK' then press enter to continue > " RULES_OK
 	done
 	echo "======================================================================"
 }
@@ -805,7 +810,7 @@ function applySettings() {
 		grep -q -x "num_logs = ${NUM_LOGS}" "${AUDITD_CONF}" || (sed -i 's/^num_logs = .*$/num_logs = '"${NUM_LOGS}"'/' "${AUDITD_CONF}")
 		grep -q -x "max_log_file = ${LOG_SIZE}" "${AUDITD_CONF}" || (sed -i 's/^max_log_file = .*$/max_log_file = '"${LOG_SIZE}"'/' "${AUDITD_CONF}")
 	else
-		echo -e "${RED}[!]Missing auditd.conf file.${RESET}"
+		echo -e "${RED}"'[!]'"Missing auditd.conf file.${RESET}"
 		exit 1
 	fi
 	# Next, set the buffer size in 10-base-config.rules, if this file is missing we'll see below
@@ -823,7 +828,7 @@ function adjustRules() {
 		echo "To avoid overlap with custom rules, would you like"
 		echo "comment out the non-essential built in rules?"
 		echo ""
-		until [[ $COMMENT_BUILTINS =~ (y|n) ]]; do
+		until [[ $COMMENT_BUILTINS =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]?: " -e -i y COMMENT_BUILTINS
 		done
 	fi
@@ -861,7 +866,7 @@ function setAuditing() {
 		if [[ -e "${RULE}" ]]; then
 			chmod 440 "${RULE}" && cp "${RULE}" -t "${AUDIT_RULES_D}" 2>/dev/null && rm "${RULE}" && echo -e "${GREEN}[+]${RESET}${BOLD}Installing ${RULE}${RESET}"
 		else
-			echo -e "${RED}[!]Missing ${RULE}, and cannot locate rule file to install.${RESET}"
+			echo -e "${RED}"'[!]'"Missing ${RULE}, and cannot locate rule file to install.${RESET}"
 		fi
 	done
 
