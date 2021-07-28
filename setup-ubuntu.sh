@@ -362,7 +362,7 @@ function setRkhunter() {
 	chmod -x '/etc/cron.daily/rkhunter'
 
 	if [ -e "${RKHUNTER_CONF}" ]; then
-		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "${RKHUNTER_CONF}" || (sed -i 's/DISABLE_TESTS=suspscan hidden_ports hidden_procs deleted_files packet_cap_apps apps/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
+		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "${RKHUNTER_CONF}" || (sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)")
