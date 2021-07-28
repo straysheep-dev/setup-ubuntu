@@ -550,29 +550,31 @@ blacklist video1394
 }
 
 function setLockdown() {
-	echo "======================================================================"
-	if ! (mokutil --sb-state | grep -qx 'SecureBoot enabled'); then
-		echo ""
-		echo -e "${BLUE}[i]${RESET}SecureBoot is not enabled."
-		echo -e "${BLUE}[i]${RESET}Current kernel lockdown state: "
-		echo $(cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]")
-		echo ""
-		echo -e "${BLUE}[i]${RESET}Change kernel lockdown mode?"
-		until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
-			read -rp "CHOOSE NO IF YOU HAVE NOT TESTED THIS [y/n]: " LOCKDOWN_CHOICE
-		done
-		if [[ $LOCKDOWN_CHOICE == "y" ]]; then
+	if [[ $MAJOR_UBUNTU_VERSION -gt 18 ]]; then
+		echo "======================================================================"
+		if ! (mokutil --sb-state | grep -qx 'SecureBoot enabled'); then
 			echo ""
-			echo "Enable which mode?"
+			echo -e "${BLUE}[i]${RESET}SecureBoot is not enabled."
+			echo -e "${BLUE}[i]${RESET}Current kernel lockdown state: "
+			echo $(cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]")
 			echo ""
-			until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
-				read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
+			echo -e "${BLUE}[i]${RESET}Change kernel lockdown mode?"
+			until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
+				read -rp "CHOOSE NO IF YOU HAVE NOT TESTED THIS [y/n]: " LOCKDOWN_CHOICE
 			done
-			echo ""
-			echo -e "${BLUE}[i]${RESET}Updating line 'GRUB_CMDLINE_LINUX' in /etc/default/grub"
-			sed -i 's/GRUB_CMDLINE_LINUX=".*"/GRUB_CMDLINE_LINUX="lockdown='"${LOCKDOWN_MODE}"'"/g' /etc/default/grub
-			sudo update-grub
-			echo -e "${BLUE}[i]${RESET}Lockdown mode changes won't take effect until next reboot."
+			if [[ $LOCKDOWN_CHOICE == "y" ]]; then
+				echo ""
+				echo "Enable which mode?"
+				echo ""
+				until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
+					read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
+				done
+				echo ""
+				echo -e "${BLUE}[i]${RESET}Updating line 'GRUB_CMDLINE_LINUX' in /etc/default/grub"
+				sed -i 's/GRUB_CMDLINE_LINUX=".*"/GRUB_CMDLINE_LINUX="lockdown='"${LOCKDOWN_MODE}"'"/g' /etc/default/grub
+				sudo update-grub
+				echo -e "${BLUE}[i]${RESET}Lockdown mode changes won't take effect until next reboot."
+			fi
 		fi
 	fi
 }
