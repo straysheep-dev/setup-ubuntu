@@ -738,8 +738,8 @@ function setSiteRules() {
 	echo -e "${BLUE}[i]${RESET}Set site-specific rules"
 	echo "The default policy templates that ship with auditd include:"
 	echo -e "${BOLD}	nispom | ospp | pci | stig | none${RESET}"
-	echo "If not using custom rules, stig is a good choice"
-	echo "If custom rules will be installed, choosing none is recommended"
+	echo -e "If not using custom rules, ${BLUE}stig${RESET} is a good choice"
+	echo -e "If custom rules will be installed, choosing ${BLUE}none${RESET} is recommended"
 	echo ""
 	until [[ $SITE_RULES =~ ^(nispom|ospp|pci|stig|none)$ ]]; do
 			read -rp "Enter a choice (lowercase): " -e -i none SITE_RULES
@@ -756,9 +756,11 @@ function checkLocalRules() {
 	fi
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Auditd expects custom rules to be named ${BOLD}'40-<name>.rules'${RESET}"
-	echo -e "${BLUE}[i]${RESET}Be sure all rules are compatible and present in the directory this script was started in."
-	echo -e "${BLUE}[i]${RESET}Because this script copies all components to a temporary directory, to"
-	echo -e "${BLUE}[i]${RESET}make changes to any custom rules, Ctrl+c quit here, then rerun this script."
+	echo -e "${BLUE}[i]${RESET}Be sure all custom rules are compatible with each other"
+	echo -e "${BLUE}[i]${RESET}Be sure all custom rules are in the same directory as this script"
+	echo -e "${BLUE}[i]${RESET}All components are copied to a temporary directory."
+	echo -e "${BLUE}[i]${RESET}To make any changes to your custom rules, Ctrl+c quit here,"
+	echo -e "${BLUE}[i]${RESET}then rerun this script."
 	echo ""
 	until [[ ${RULES_OK} =~ ^(OK)$ ]]; do
 		read -rp "Type 'OK' then press enter to continue > " RULES_OK
@@ -886,7 +888,9 @@ function setAuditing() {
 	echo "======================================================================"
 	echo -e "${BLUE}[^]${RESET}Any errors above this line should be fixed in their rule file"
 	echo -e "${BLUE}[^]${RESET}Review the line numbers called out in /etc/audit/audit.rules"
-	echo -e "${BLUE}[^]${RESET}Rerun this script choosing to NOT merge the current (broken) rules"
+	echo -e "${BLUE}[^]${RESET}When tuning rules, edit the files in /etc/audit/rules.d/*"
+	echo -e "${BLUE}[^]${RESET}Run augenrules --check && augenrules --load, then reboot to load"
+	echo -e "${BLUE}[^]${RESET}edited rules after making changes"
 
 	echo ""
 	echo -e "${BLUE}[>]${RESET}${BOLD}Log format = ${LOG_FORMAT}${RESET}"
