@@ -271,6 +271,29 @@ function installPackages() {
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
 	if [ "${VPS}" = "true" ]; then
 		apt install -y aide auditd easy-rsa openvpn qrencode resolvconf rkhunter wireguard
+		if ! (which unbound); then
+			echo "======================================================================"
+			echo -e "${BLUE}[i]${RESET}Install Unbound?"
+			echo ""
+			until [[ $UNBOUND_CHOICE =~ ^(y|n)$ ]]; do
+				read -rp "[y/n]: " UNBOUND_CHOICE
+			done
+			if [[ $UNBOUND_CHOICE == "y" ]]; then
+				apt install -y unbound
+				# add unbound.conf here?
+				if [ -e "unbound.conf" ]; then
+					mv unbound.conf -t /etc/unbound/
+				fi
+				if ! (unbound-checkconf | grep 'no errors'); then
+					echo -e "${RED}[i]${RESET}Error with unbound configuration. Quitting."
+					exit 1
+				fi
+				echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
+				systemctl stop systemd-resolved.service
+				systemctl disable systemd-resolved.service
+				echo -e "${BLUE}[i]${RESET}Done."
+			fi
+		fi
 	elif [ "${HW}" = "true" ]; then
 		apt install -y auditd apparmor-utils curl git pcscd resolvconf rkhunter scdaemon usb-creator-gtk usbguard wireguard
 	elif [ "${VM}" = "true" ]; then
