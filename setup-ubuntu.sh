@@ -277,9 +277,12 @@ function installPackages() {
 		if (dmesg | grep -q 'vmware'); then
 			apt install -y open-vm-tools-desktop
 		fi
-		apt install -y auditd apparmor-utils curl git hexedit nmap pcscd python3-pip python3-venv rkhunter scdaemon usbguard wireshark
+		apt install -y auditd apparmor-utils curl git hexedit nmap pcscd python3-pip python3-venv resolvconf rkhunter scdaemon usbguard wireguard wireshark
 	fi
 	echo -e "${BLUE}[+]${RESET}All essential packages installed.${RESET}"
+	sleep 1
+	echo -e "${BLUE}[+]${RESET}Refreshing all snaps."
+	snap refresh
 	sleep 1
 }
 
@@ -359,7 +362,7 @@ function setRkhunter() {
 	chmod -x '/etc/cron.daily/rkhunter'
 
 	if [ -e "${RKHUNTER_CONF}" ]; then
-		grep -q -x "DISABLE_TESTS=suspscan deleted_files apps" "${RKHUNTER_CONF}" || (sed -i 's/DISABLE_TESTS=suspscan hidden_ports hidden_procs deleted_files packet_cap_apps apps/DISABLE_TESTS=suspscan deleted_files apps/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
+		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "${RKHUNTER_CONF}" || (sed -i 's/DISABLE_TESTS=suspscan hidden_ports hidden_procs deleted_files packet_cap_apps apps/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)")
@@ -528,16 +531,16 @@ function setLockdown() {
 	if ! (mokutil --sb-state | grep -qx 'SecureBoot enabled'); then
 		echo ""
 		echo -e "${BLUE}[i]${RESET}SecureBoot is not enabled."
-		echo -e "${BLUE}[i]${RESET}Current state: "
+		echo -e "${BLUE}[i]${RESET}Current kernel lockdown state: "
 		echo $(cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]")
 		echo ""
-		echo -e "${BLUE}[i]${RESET}Enable kernel lockdown mode?"
+		echo -e "${BLUE}[i]${RESET}Change kernel lockdown mode?"
 		until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
 			read -rp "CHOOSE NO IF YOU HAVE NOT TESTED THIS [y/n]: " LOCKDOWN_CHOICE
 		done
 		if [[ $LOCKDOWN_CHOICE == "y" ]]; then
 			echo ""
-			echo "Which mode?"
+			echo "Enable which mode?"
 			echo ""
 			until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
 				read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
