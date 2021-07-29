@@ -285,7 +285,7 @@ function installPackages() {
 				apt install -y unbound
 				# add unbound.conf here?
 				if [ -e "unbound.conf" ]; then
-					mv unbound.conf -t /etc/unbound/
+					cp unbound.conf -t /etc/unbound/
 				fi
 				if ! (unbound-checkconf | grep 'no errors'); then
 					echo -e "${RED}[i]${RESET}Error with unbound configuration. Quitting."
