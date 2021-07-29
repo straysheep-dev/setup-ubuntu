@@ -204,6 +204,9 @@ function setIpv6() {
 		sed -i 's/^IPV6=yes$/IPV6=no/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
 	elif [[ $IPV6_CHOICE == "n" ]] && (grep -qx 'IPV6=no' /etc/default/ufw) ; then
 		sed -i 's/^IPV6=no$/IPV6=yes/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
+		# enable ipv6 privacy addressing
+		sed -i 's/^#net\/ipv6\/conf\/default\/use_tempaddr=2$/net\/ipv6\/conf\/default\/use_tempaddr=2/' /etc/ufw/sysctl.conf
+		sed -i 's/^#net\/ipv6\/conf\/all\/use_tempaddr=2/net\/ipv6\/conf\/all\/use_tempaddr=2/' /etc/ufw/sysctl.conf
 	fi
 }
 
