@@ -41,7 +41,7 @@ LOCKDOWN_MODE=0
 PUB_IPV4=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 PUB_IPV6=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 PUB_NIC="$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)"
-GTWY="$(ip route | grep "default" | cut -d " " -f3)"
+GTWY="$(ip route | grep 'default' | cut -d ' ' -f3)"
 
 VM='false'
 HW='false'
