@@ -283,12 +283,14 @@ function installPackages() {
 			done
 			if [[ $UNBOUND_CHOICE == "y" ]]; then
 				apt install -y unbound
-				# add unbound.conf here?
 				if [ -e "unbound.conf" ]; then
+					# Replace any default conf files if we have our own in cwd
 					cp unbound.conf -t /etc/unbound/
+					rm /etc/unbound/unbound.conf.d/*.conf
 				fi
 				if ! (unbound-checkconf | grep 'no errors'); then
 					echo -e "${RED}[i]${RESET}Error with unbound configuration. Quitting."
+					echo -e "${RED}[i]${RESET}Address any configuration errors above then re-run this script."
 					exit 1
 				fi
 				echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
@@ -466,7 +468,7 @@ function setSSH() {
 		echo -e "${BLUE}[+]${RESET}Restarting sshd.service..."
 	fi
 
-	echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review any and all firewall rules before disonnecting from this session.${RESET}"
+	echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review all firewall rules before ending this session.${RESET}"
 	sleep 3
 }
 
