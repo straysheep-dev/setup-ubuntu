@@ -41,7 +41,7 @@ LOCKDOWN_MODE=0
 PUB_IPV4=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 PUB_IPV6=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 PUB_NIC="$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)"
-GTWY="$(ip route | grep "default" | cut -d " " -f3)"
+GTWY="$(ip route | grep 'default' | cut -d ' ' -f3)"
 
 VM='false'
 HW='false'
@@ -204,6 +204,9 @@ function setIpv6() {
 		sed -i 's/^IPV6=yes$/IPV6=no/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
 	elif [[ $IPV6_CHOICE == "n" ]] && (grep -qx 'IPV6=no' /etc/default/ufw) ; then
 		sed -i 's/^IPV6=no$/IPV6=yes/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
+		# enable ipv6 privacy addressing
+		sed -i 's/^#net\/ipv6\/conf\/default\/use_tempaddr=2$/net\/ipv6\/conf\/default\/use_tempaddr=2/' /etc/ufw/sysctl.conf
+		sed -i 's/^#net\/ipv6\/conf\/all\/use_tempaddr=2/net\/ipv6\/conf\/all\/use_tempaddr=2/' /etc/ufw/sysctl.conf
 	fi
 }
 
@@ -271,15 +274,43 @@ function installPackages() {
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
 	if [ "${VPS}" = "true" ]; then
 		apt install -y aide auditd easy-rsa openvpn qrencode resolvconf rkhunter wireguard
+		if ! (which unbound); then
+			echo "======================================================================"
+			echo -e "${BLUE}[i]${RESET}Install Unbound?"
+			echo ""
+			until [[ $UNBOUND_CHOICE =~ ^(y|n)$ ]]; do
+				read -rp "[y/n]: " UNBOUND_CHOICE
+			done
+			if [[ $UNBOUND_CHOICE == "y" ]]; then
+				apt install -y unbound
+				if [ -e "unbound.conf" ]; then
+					# Replace any default conf files if we have our own in cwd
+					cp unbound.conf -t /etc/unbound/
+					rm /etc/unbound/unbound.conf.d/*.conf
+				fi
+				if ! (unbound-checkconf | grep 'no errors'); then
+					echo -e "${RED}[i]${RESET}Error with unbound configuration. Quitting."
+					echo -e "${RED}[i]${RESET}Address any configuration errors above then re-run this script."
+					exit 1
+				fi
+				echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
+				systemctl stop systemd-resolved.service
+				systemctl disable systemd-resolved.service
+				echo -e "${BLUE}[i]${RESET}Done."
+			fi
+		fi
 	elif [ "${HW}" = "true" ]; then
 		apt install -y auditd apparmor-utils curl git pcscd resolvconf rkhunter scdaemon usb-creator-gtk usbguard wireguard
 	elif [ "${VM}" = "true" ]; then
 		if (dmesg | grep -q 'vmware'); then
 			apt install -y open-vm-tools-desktop
 		fi
-		apt install -y auditd apparmor-utils curl git hexedit nmap pcscd python3-pip python3-venv rkhunter scdaemon usbguard wireshark
+		apt install -y auditd apparmor-utils curl git hexedit nmap pcscd python3-pip python3-venv resolvconf rkhunter scdaemon usbguard wireguard wireshark
 	fi
 	echo -e "${BLUE}[+]${RESET}All essential packages installed.${RESET}"
+	sleep 1
+	echo -e "${BLUE}[+]${RESET}Refreshing all snaps."
+	snap refresh
 	sleep 1
 }
 
@@ -359,7 +390,7 @@ function setRkhunter() {
 	chmod -x '/etc/cron.daily/rkhunter'
 
 	if [ -e "${RKHUNTER_CONF}" ]; then
-		grep -q -x "DISABLE_TESTS=suspscan deleted_files apps" "${RKHUNTER_CONF}" || (sed -i 's/DISABLE_TESTS=suspscan hidden_ports hidden_procs deleted_files packet_cap_apps apps/DISABLE_TESTS=suspscan deleted_files apps/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
+		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "${RKHUNTER_CONF}" || (sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)")
 		grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)")
@@ -437,7 +468,7 @@ function setSSH() {
 		echo -e "${BLUE}[+]${RESET}Restarting sshd.service..."
 	fi
 
-	echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review any and all firewall rules before disonnecting from this session.${RESET}"
+	echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review all firewall rules before ending this session.${RESET}"
 	sleep 3
 }
 
@@ -524,29 +555,31 @@ blacklist video1394
 }
 
 function setLockdown() {
-	echo "======================================================================"
-	if ! (mokutil --sb-state | grep -qx 'SecureBoot enabled'); then
-		echo ""
-		echo -e "${BLUE}[i]${RESET}SecureBoot is not enabled."
-		echo -e "${BLUE}[i]${RESET}Current state: "
-		echo $(cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]")
-		echo ""
-		echo -e "${BLUE}[i]${RESET}Enable kernel lockdown mode?"
-		until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
-			read -rp "CHOOSE NO IF YOU HAVE NOT TESTED THIS [y/n]: " LOCKDOWN_CHOICE
-		done
-		if [[ $LOCKDOWN_CHOICE == "y" ]]; then
+	if [[ $MAJOR_UBUNTU_VERSION -gt 18 ]]; then
+		echo "======================================================================"
+		if ! (mokutil --sb-state | grep -qx 'SecureBoot enabled'); then
 			echo ""
-			echo "Which mode?"
+			echo -e "${BLUE}[i]${RESET}SecureBoot is not enabled."
+			echo -e "${BLUE}[i]${RESET}Current kernel lockdown state: "
+			echo $(cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]")
 			echo ""
-			until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
-				read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
+			echo -e "${BLUE}[i]${RESET}Change kernel lockdown mode?"
+			until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
+				read -rp "CHOOSE NO IF YOU HAVE NOT TESTED THIS [y/n]: " LOCKDOWN_CHOICE
 			done
-			echo ""
-			echo -e "${BLUE}[i]${RESET}Updating line 'GRUB_CMDLINE_LINUX' in /etc/default/grub"
-			sed -i 's/GRUB_CMDLINE_LINUX=".*"/GRUB_CMDLINE_LINUX="lockdown='"${LOCKDOWN_MODE}"'"/g' /etc/default/grub
-			sudo update-grub
-			echo -e "${BLUE}[i]${RESET}Lockdown mode changes won't take effect until next reboot."
+			if [[ $LOCKDOWN_CHOICE == "y" ]]; then
+				echo ""
+				echo "Enable which mode?"
+				echo ""
+				until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
+					read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
+				done
+				echo ""
+				echo -e "${BLUE}[i]${RESET}Updating line 'GRUB_CMDLINE_LINUX' in /etc/default/grub"
+				sed -i 's/GRUB_CMDLINE_LINUX=".*"/GRUB_CMDLINE_LINUX="lockdown='"${LOCKDOWN_MODE}"'"/g' /etc/default/grub
+				sudo update-grub
+				echo -e "${BLUE}[i]${RESET}Lockdown mode changes won't take effect until next reboot."
+			fi
 		fi
 	fi
 }
@@ -678,11 +711,11 @@ function checkCurrentRules() {
 		if [[ $CONTINUE_SETUP == "n" ]]; then
 			exit 1
 		elif [[ $CONTINUE_SETUP == "y" ]]; then
-			rm ${AUDIT_RULES_D}* 2>/dev/null
+			rm "${AUDIT_RULES_D}"* 2>/dev/null
 		fi
 	# Reset all other rules
 	else
-		rm ${AUDIT_RULES_D}* 2>/dev/null
+		rm "${AUDIT_RULES_D}"* 2>/dev/null
 	fi
 }
 
@@ -735,8 +768,8 @@ function setSiteRules() {
 	echo -e "${BLUE}[i]${RESET}Set site-specific rules"
 	echo "The default policy templates that ship with auditd include:"
 	echo -e "${BOLD}	nispom | ospp | pci | stig | none${RESET}"
-	echo "If not using custom rules, stig is a good choice"
-	echo "If custom rules will be installed, choosing none is recommended"
+	echo -e "If not using custom rules, ${BLUE}stig${RESET} is a good choice"
+	echo -e "If custom rules will be installed, choosing ${BLUE}none${RESET} is recommended"
 	echo ""
 	until [[ $SITE_RULES =~ ^(nispom|ospp|pci|stig|none)$ ]]; do
 			read -rp "Enter a choice (lowercase): " -e -i none SITE_RULES
@@ -753,9 +786,11 @@ function checkLocalRules() {
 	fi
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Auditd expects custom rules to be named ${BOLD}'40-<name>.rules'${RESET}"
-	echo -e "${BLUE}[i]${RESET}Be sure all rules are compatible and present in the directory this script was started in."
-	echo -e "${BLUE}[i]${RESET}Because this script copies all components to a temporary directory, to"
-	echo -e "${BLUE}[i]${RESET}make changes to any custom rules, Ctrl+c quit here, then rerun this script."
+	echo -e "${BLUE}[i]${RESET}Be sure all custom rules are compatible with each other"
+	echo -e "${BLUE}[i]${RESET}Be sure all custom rules are in the same directory as this script"
+	echo -e "${BLUE}[i]${RESET}All components are copied to a temporary directory."
+	echo -e "${BLUE}[i]${RESET}To make any changes to your custom rules, Ctrl+c quit here,"
+	echo -e "${BLUE}[i]${RESET}then rerun this script."
 	echo ""
 	until [[ ${RULES_OK} =~ ^(OK)$ ]]; do
 		read -rp "Type 'OK' then press enter to continue > " RULES_OK
@@ -883,7 +918,9 @@ function setAuditing() {
 	echo "======================================================================"
 	echo -e "${BLUE}[^]${RESET}Any errors above this line should be fixed in their rule file"
 	echo -e "${BLUE}[^]${RESET}Review the line numbers called out in /etc/audit/audit.rules"
-	echo -e "${BLUE}[^]${RESET}Rerun this script choosing to NOT merge the current (broken) rules"
+	echo -e "${BLUE}[^]${RESET}When tuning rules, edit the files in /etc/audit/rules.d/*"
+	echo -e "${BLUE}[^]${RESET}Run augenrules --check && augenrules --load, then reboot to load"
+	echo -e "${BLUE}[^]${RESET}edited rules after making changes"
 
 	echo ""
 	echo -e "${BLUE}[>]${RESET}${BOLD}Log format = ${LOG_FORMAT}${RESET}"
