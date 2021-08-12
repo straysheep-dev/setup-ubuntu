@@ -24,5 +24,6 @@ Identity added: /home/test/.ssh/id_rsa (test@test)
 ## To do:
 
 - [ ] Make revert functions to undo all changes
+- [ ] Review output of `shellcheck` and make any fixes
 - [ ] Review Ubuntu 18.04/20.04 guidelines from [OpenSCAP](https://www.open-scap.org/security-policies/choosing-policy/)
 - [ ] Check unbound and systemd-resolved services 
