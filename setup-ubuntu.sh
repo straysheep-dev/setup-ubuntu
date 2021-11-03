@@ -22,24 +22,23 @@ RESET="\033[00m"       # Normal
 UID1000="$(grep 1000 /etc/passwd | cut -d: -f1)"
 AA_FIREFOX=/etc/apparmor.d/usr.bin.firefox
 AA_FIREFOX_LOCAL=/etc/apparmor.d/local/usr.bin.firefox
-AUDIT_DOCS=/usr/share/doc/auditd/examples/rules/
-AUDITD_CONF=/etc/audit/auditd.conf
-AUDIT_RULES_D=/etc/audit/rules.d/
 ADDUSER_CONF=/etc/adduser.conf
-AIDE_MACROS=/etc/aide/aide.conf.d/
-HOME_DIR=/home/"${UID1000}"/
+AIDE_MACROS=/etc/aide/aide.conf.d
+HOME_DIR=/home/"$UID1000"
 VBOX_APT_LIST=/etc/apt/sources.list.d/virtualbox.list
 RKHUNTER_CONF=/etc/rkhunter.conf
 SSHD_CONF=/etc/ssh/sshd_config
-UFW_RULES=/etc/ufw/user.rules
 
-NUM_LOGS=0
-LOG_SIZE=0
-LOG_FORMAT=0
-LOCKDOWN_MODE=0
+#AUDIT_DOCS=/usr/share/doc/auditd/examples/rules
+#AUDIT_CONF=/etc/audit/auditd.conf
+#AUDIT_RULES_D=/etc/audit/rules.d
+#NUM_LOGS=0
+#LOG_SIZE=0
+#LOG_FORMAT=0
+#LOCKDOWN_MODE=0
 
-PUB_IPV4=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
-PUB_IPV6=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
+#PUB_IPV4=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
+#PUB_IPV6=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 PUB_NIC="$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)"
 GTWY="$(ip route | grep 'default' | cut -d ' ' -f3)"
 
@@ -60,12 +59,22 @@ function isRoot() {
 isRoot
 
 function checkCwd() {
-	if  ! [ -e 'setup-ubuntu.sh' ]; then
-		echo "To avoid issues, execute this script from it's current working directory. Quitting."
+	if  ! [ -e "$(pwd)"/setup-ubuntu.sh ]; then
+		echo "To avoid issues, execute this script from it's current working directory."
+		echo "If you renamed this script, change this function or rename it 'setup-ubuntu.sh'"
+		echo "Quitting."
 		exit 1
 	fi
 }
 checkCwd
+
+function checkHostname() {
+	if ! (grep -q "$(cat /etc/hostname)" /etc/hosts); then
+		echo -e "${RED}"'[!]'"hostname not found in /etc/hosts file.${RESET}"
+		exit 1
+	fi
+}
+checkHostname
 
 function checkOS() {
 	# Check OS version
@@ -99,25 +108,32 @@ checkOS
 function setPerms() {
 	# Applies to VM, HW, VPS
 	echo "======================================================================"
-	if ! (grep -qx 'DIR_MODE=0750' "${ADDUSER_CONF}"); then
-  		sed -i 's/DIR_MODE=0755/DIR_MODE=0750/' "${ADDUSER_CONF}"
-  		chmod 750 "${HOME_DIR}"
+	if ! (grep -qx 'DIR_MODE=0750' "$ADDUSER_CONF"); then
+		sed -i 's/DIR_MODE=0755/DIR_MODE=0750/' "$ADDUSER_CONF"
+		chmod 750 "$HOME_DIR"
 		echo -e "${GREEN}[+]${RESET}User DAC policy updated successfully."
 	else
 		echo -e "${BLUE}[i]${RESET}User DAC policy already updated. Skipping."
 	fi
 }
 
+function checkSudoers() {
+	# Applies to pre-installed Raspberry Pi images
+	for file in /etc/sudoers.d/* ; do
+		if (grep -q "^$UID1000 ALL=(ALL) NOPASSWD:ALL$" "$file"); then
+			echo -e "${BLUE}[i]${RESET}Commenting out 'NOPASSWD:ALL' in $file"
+			sed -i 's/^'"$UID1000"' ALL=(ALL) NOPASSWD:ALL$/#'"$UID1000"' ALL=(ALL) NOPASSWD:ALL/' "$file"
+		fi
+	done
+}
+
 function removeBrowser() {
 	# Applies to HW
 	echo "======================================================================"
-	FF_LOCALE=$(dpkg --list | grep "firefox-locale" | cut -d ' ' -f 3)
-
-	if ( dpkg --list | grep -q 'firefox' ); then
-		echo ""
-  		echo -e "${BLUE}[-]${RESET}Removing all Firefox package files."
-		echo ""
-		apt-get autoremove --purge -y firefox "${FF_LOCALE}"
+	if (command -v firefox); then
+		for package in /usr/share/doc/firefox*;
+			do apt-get autoremove --purge -y "${package:15:30}"; 
+		done
 		rm -rf /usr/lib/firefox*
 	else
 		echo -e "${BLUE}[i]${RESET}Default browser already removed. Skipping."
@@ -128,10 +144,45 @@ function removeBrowser() {
 function stopServices() {
 	# Applies to VM, HW
 	echo "======================================================================"
-	(pgrep cups-browsed &>/dev/null && systemctl stop cups-browsed.service && systemctl disable cups-browsed.service)
-	(pgrep cups &>/dev/null && systemctl stop cups.service && systemctl disable cups.service)
-	#NOTE: doesn't automate unless disabled first, then stopped
-	(pgrep avahi-daemon &>/dev/null && systemctl disable avahi-daemon.service && systemctl stop avahi-daemon.service)
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-standard.html
+	# xccdf_org.ssgproject.content_rule_service_apport_disabled
+	echo -e "${BLUE}[i]${RESET}Checking apport.service..."
+	if (systemctl is-active apport); then
+		systemctl stop apport
+		systemctl disable apport
+		systemctl mask --now apport.service
+	elif (systemctl is-enabled apport); then
+		systemctl disable apport
+		systemctl mask --now apport.service
+	fi
+
+	# cups
+	echo -e "${BLUE}[i]${RESET}Checking service: cups..."
+	if (systemctl is-active cups); then
+		systemctl stop cups
+	fi
+	if (systemctl is-enabled cups); then
+		systemctl disable cups
+		systemctl mask cups
+	fi
+	# cups-browsed
+	echo -e "${BLUE}[i]${RESET}Checking service: cups-browsed..."
+	if (systemctl is-active cups-browsed); then
+		systemctl stop cups-browsed
+	fi
+	if (systemctl is-enabled cups-browsed); then
+		systemctl disable cups-browsed
+		systemctl mask cups-browsed
+	fi
+	# avahi
+	echo -e "${BLUE}[i]${RESET}Checking service: avahi-daemon..."
+	if (systemctl is-active avahi-daemon); then
+		systemctl stop avahi-daemon
+	fi
+	if (systemctl is-enabled avahi-daemon); then
+		systemctl disable avahi-daemon
+		systemctl mask avahi-daemon
+	fi
 	echo -e "${BLUE}[i]${RESET}All non-essential services stopped and disabled."
 }
 
@@ -161,17 +212,17 @@ function addVBox() {
 	done
 
 	if [[ $VBOX_CHOICE == "y" ]]; then
-		if ! [ -e "oracle_vbox_2016.asc" ]; then
+		if ! [ -e ./oracle_vbox_2016.asc ]; then
 			echo -e "${GREEN}[+]${RESET}Retrieving VirtualBox apt-key with Wget.${RESET}"
 			(wget -O oracle_vbox_2016.asc 'https://www.virtualbox.org/download/oracle_vbox_2016.asc') || (echo -e "${RED}"'[!]'"${RESET}Unable to retrieve Oracle VirtualBox signing key.${RESET}" && rm oracle_vbox_2016.asc)
 		fi
-		if [ -e "oracle_vbox_2016.asc" ]; then
+		if [ -e ./oracle_vbox_2016.asc ]; then
 			echo -e "${GREEN}[+]${RESET}Adding VirtualBox apt-key from local file.${RESET}"
-			echo -e "${GREEN}[+]${RESET}VirtualBox sources.list created at ${VBOX_APT_LIST}."
-			apt-key add oracle_vbox_2016.asc
-			echo "deb [arch=amd64] https://download.virtualbox.org/virtualbox/debian ${VERSION_CODENAME} contrib" >"${VBOX_APT_LIST}"
+			echo -e "${GREEN}[+]${RESET}VirtualBox sources.list created at $VBOX_APT_LIST."
+			apt-key add ./oracle_vbox_2016.asc
+			echo "deb [arch=amd64] https://download.virtualbox.org/virtualbox/debian ${VERSION_CODENAME} contrib" >"$VBOX_APT_LIST"
 		fi
-	elif [[ $VBOX_CHOICE == "n" ]] && [ -e "${VBOX_APT_LIST}" ]; then
+	elif [[ $VBOX_CHOICE == "n" ]] && [ -e "$VBOX_APT_LIST" ]; then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}Looks like the VirtualBox gpg key is present."
 		echo "Remove Oracle's VirtualBox apt repository and key from keyring?"
@@ -181,7 +232,7 @@ function addVBox() {
 		done
 
 		if [[ $REMOVE_VBOX == "y" ]]; then
-			rm "${VBOX_APT_LIST}"
+			rm "$VBOX_APT_LIST"
 			apt-key del 'B9F8 D658 297A F3EF C18D  5CDF A2F6 83C5 2980 AECF'
 			apt update
 			apt autoremove -y
@@ -234,21 +285,22 @@ function setFirewall() {
 		ufw enable
 		ufw default deny incoming
 		ufw default deny outgoing
-		ufw allow out on "${PUB_NIC}" to any proto tcp port 80,443
-		ufw allow out on "${PUB_NIC}" to any proto udp port 53
+		ufw allow out on "$PUB_NIC" to any proto tcp port 80,443
+		ufw allow out on "$PUB_NIC" to any proto udp port 123
+		ufw allow out on "$PUB_NIC" to any proto udp port 53
 		ufw prepend deny out to 192.168.0.0/16
 		ufw prepend deny out to 172.16.0.0/12
 		ufw prepend deny out to 169.254.0.0/16
 		ufw prepend deny out to 10.0.0.0/8
-		ufw prepend deny out on "${PUB_NIC}" to 127.0.0.0/8
+		ufw prepend deny out on "$PUB_NIC" to 127.0.0.0/8
 		if (grep -qx 'IPV6=yes' /etc/default/ufw); then
 			ufw prepend deny out to fc00::/7
-			ufw prepend deny out on "${PUB_NIC}" to ::1
+			ufw prepend deny out on "$PUB_NIC" to ::1
 		fi
 		if echo "$GTWY" | grep -qE '^(10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.|192\.168)'; then
-			ufw prepend allow out on "${PUB_NIC}" to "${GTWY}"
+			ufw prepend allow out on "$PUB_NIC" to "$GTWY"
 			if (dmesg | grep -q 'VirtualBox') && (echo "$GTWY" | grep -qx 10.0.2.2); then
-				ufw insert 2 allow out on "${PUB_NIC}" to '10.0.2.3'
+				ufw insert 2 allow out on "$PUB_NIC" to '10.0.2.3'
 			fi
 		fi
 		echo -e "${BLUE}[+]${RESET}Basic firewall egress rules are live."
@@ -259,12 +311,49 @@ function updatePackages() {
 	# Applies to VM, HW, VPS
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Updating packages."
-	apt update
+	apt update && \
 	apt upgrade -y
 	sleep 1
 	echo ""
 	echo -e "${BLUE}[i]${RESET}Autoremoving packages."
-	apt autoremove -y
+	apt autoremove --purge -y
+	apt-get clean
+}
+
+function setResolver() {
+	# Applies to VM, HW, VPS
+	if ! (command -v unbound); then
+		echo "======================================================================"
+		echo -e "${BLUE}[i]${RESET}Install Unbound?"
+		echo ""
+		until [[ $UNBOUND_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " UNBOUND_CHOICE
+		done
+		if [[ $UNBOUND_CHOICE == "y" ]]; then
+			apt install -y unbound
+			if [ -e ./unbound.conf ]; then
+				# Replace any default conf files if we have our own in cwd
+				cp ./unbound.conf -t /etc/unbound/
+				rm /etc/unbound/unbound.conf.d/*.conf
+			fi
+			if ! (unbound-checkconf | grep 'no errors'); then
+				echo -e "${RED}[i]${RESET}Error with unbound configuration. Quitting."
+				echo -e "${RED}[i]${RESET}Address any configuration errors above then re-run this script."
+				exit 1
+			else
+				# Apply latest conf
+				systemctl restart unbound
+			fi
+			echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
+			if (systemctl is-active systemd-resolved); then
+				systemctl stop systemd-resolved
+			fi
+			if (systemctl is-enabled systemd-resolved); then
+				systemctl disable systemd-resolved
+			fi
+			echo -e "${BLUE}[i]${RESET}Done."
+		fi
+	fi
 }
 
 function installPackages() {
@@ -272,36 +361,11 @@ function installPackages() {
 	
 	echo -e ""
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
-	if [ "${VPS}" = "true" ]; then
+	if [ "$VPS" = "true" ]; then
 		apt install -y aide auditd easy-rsa openvpn qrencode resolvconf rkhunter wireguard
-		if ! (which unbound); then
-			echo "======================================================================"
-			echo -e "${BLUE}[i]${RESET}Install Unbound?"
-			echo ""
-			until [[ $UNBOUND_CHOICE =~ ^(y|n)$ ]]; do
-				read -rp "[y/n]: " UNBOUND_CHOICE
-			done
-			if [[ $UNBOUND_CHOICE == "y" ]]; then
-				apt install -y unbound
-				if [ -e "unbound.conf" ]; then
-					# Replace any default conf files if we have our own in cwd
-					cp unbound.conf -t /etc/unbound/
-					rm /etc/unbound/unbound.conf.d/*.conf
-				fi
-				if ! (unbound-checkconf | grep 'no errors'); then
-					echo -e "${RED}[i]${RESET}Error with unbound configuration. Quitting."
-					echo -e "${RED}[i]${RESET}Address any configuration errors above then re-run this script."
-					exit 1
-				fi
-				echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
-				systemctl stop systemd-resolved.service
-				systemctl disable systemd-resolved.service
-				echo -e "${BLUE}[i]${RESET}Done."
-			fi
-		fi
-	elif [ "${HW}" = "true" ]; then
+	elif [ "$HW" = "true" ]; then
 		apt install -y auditd apparmor-utils curl git pcscd resolvconf rkhunter scdaemon usb-creator-gtk usbguard wireguard
-	elif [ "${VM}" = "true" ]; then
+	elif [ "$VM" = "true" ]; then
 		if (dmesg | grep -q 'vmware'); then
 			apt install -y open-vm-tools-desktop
 		fi
@@ -320,24 +384,24 @@ function addGroups() {
 	# Monitor && log execution of this or don't enable it.
 	if (grep -q 'wireshark' /etc/group); then
 		echo "======================================================================"
-		echo -e "${BLUE}[i]${RESET}Add ${UID1000} to wireshark group?"
+		echo -e "${BLUE}[i]${RESET}Add $UID1000 to wireshark group?"
 		echo ""
 		until [[ ${WIRESHARK_CHOICE} =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]: " WIRESHARK_CHOICE
 		done
 	fi
 	if [[ $WIRESHARK_CHOICE == "y" ]]; then
-		usermod -a -G wireshark "${UID1000}"
+		usermod -a -G wireshark "$UID1000"
 		echo "Done."
 		sleep 1
-	elif [[ $WIRESHARK_CHOICE == "n" ]] && (groups "${UID1000}" | grep -q wireshark); then
-		echo -e "${BLUE}[i]${RESET}Remove ${UID1000} from wireshark group?"
+	elif [[ $WIRESHARK_CHOICE == "n" ]] && (groups "$UID1000" | grep -q wireshark); then
+		echo -e "${BLUE}[i]${RESET}Remove $UID1000 from wireshark group?"
 		until [[ ${WIRESHARK_REMOVE} =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]: " WIRESHARK_REMOVE
 		done
 		
 		if [[ $WIRESHARK_REMOVE == "y" ]]; then
-			deluser "${UID1000}" wireshark
+			deluser "$UID1000" wireshark
 		fi
 	fi
 	
@@ -346,10 +410,10 @@ function addGroups() {
 function removeGroups() {
 	# Applies to VM, HW, VPS
 	# Adjusts default user's groups to prevent non-root processes from reading system log files.
-	if (groups "${UID1000}" | grep -q ' adm '); then
+	if (groups "$UID1000" | grep -q ' adm '); then
 		echo "======================================================================"
-		echo -e "${BLUE}[i]${RESET}Removing user ${UID1000} from administrative groups (adm)."
-		deluser "${UID1000}" adm
+		echo -e "${BLUE}[i]${RESET}Removing user $UID1000 from administrative groups (adm)."
+		deluser "$UID1000" adm
 	fi
 }
 
@@ -357,7 +421,7 @@ function setPostfix() {
 	# Applies to VM, HW, VPS
 	echo "======================================================================"
 	# Prevents the postfix service from flagging the system as degraded if it's not configured.
-	if [ -e '/etc/systemd/system/multi-user.target.wants/postfix.service' ]; then
+	if (systemctl is-enabled postfix); then
 		echo -e "${BLUE}[-]${RESET}Disabling postfix.service.${RESET}"
 		systemctl disable postfix.service
 	else
@@ -373,11 +437,11 @@ function setAIDE() {
 	echo -e "${BLUE}[i]${RESET}Checking aide's cron.daily execution (disabled, enable manually)."
 	chmod -x '/etc/cron.daily/aide'
 
-	if [ "${HW}" = 'true' ] && ! [ -e "${AIDE_MACROS}"31_aide_home-dirs ]; then
-		echo "!${HOME_DIR}" > "${AIDE_MACROS}"31_aide_home-dirs
-		echo -e "${GREEN}[+]${RESET}Adding AIDE policy file: '${AIDE_MACROS}31_aide_home-dirs'."
-	elif [ "${HW}" = 'true' ] && [ -e "${AIDE_MACROS}"31_aide_home-dirs ]; then
-		echo -e "${BLUE}[i]${RESET}AIDE policy file '${AIDE_MACROS}31_aide_home-dirs' already installed. Skipping."
+	if [ "$HW" = 'true' ] && ! [ -e "$AIDE_MACROS"/31_aide_home-dirs ]; then
+		echo "!$HOME_DIR" > "$AIDE_MACROS"/31_aide_home-dirs
+		echo -e "${GREEN}[+]${RESET}Adding AIDE policy file: $AIDE_MACROS/31_aide_home-dirs."
+	else
+		echo -e "${BLUE}[i]${RESET}AIDE policy file $AIDE_MACROS/31_aide_home-dirs already installed. Skipping."
 	fi
 }
 
@@ -389,19 +453,19 @@ function setRkhunter() {
 	echo -e "${BLUE}[i]${RESET}Checking rkhunter's cron.daily execution (disabled, enable manually)."
 	chmod -x '/etc/cron.daily/rkhunter'
 
-	if [ -e "${RKHUNTER_CONF}" ]; then
-		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "${RKHUNTER_CONF}" || (sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)")
-		if [ "${VPS}" = 'false' ]; then
-			grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "${RKHUNTER_CONF}" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)")
+	if [ -e "$RKHUNTER_CONF" ]; then
+		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "$RKHUNTER_CONF" || (sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
+		grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)")
+		grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)")
+		grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)")
+		grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)")
+		if [ "$VPS" = 'false' ]; then
+			grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)")
 		fi
-		grep -q -x "ALLOW_SSH_PROT_V1=0" "${RKHUNTER_CONF}" || (sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Adding warning for detection of SSHv1 protocol.")
-		grep -q -x '#WEB_CMD="/bin/false"' "${RKHUNTER_CONF}" || (sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "${RKHUNTER_CONF}" && echo -e "${BLUE}[*]${RESET}Commenting out WEB_CMD="'"\/bin\/false"')
+		grep -q -x "ALLOW_SSH_PROT_V1=0" "$RKHUNTER_CONF" || (sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Adding warning for detection of SSHv1 protocol.")
+		grep -q -x '#WEB_CMD="/bin/false"' "$RKHUNTER_CONF" || (sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Commenting out WEB_CMD="'"\/bin\/false"')
 		rkhunter -C && echo -e "${GREEN}[+]${RESET}Reloading rkhunter profile."
-	elif ! [ -e "${RKHUNTER_CONF}" ]; then
+	elif ! [ -e "$RKHUNTER_CONF" ]; then
 		echo -e "${RED}"'[!]'"${RESET}rkhunter.conf file not found. Skipping."
 	fi
 }
@@ -409,18 +473,18 @@ function setRkhunter() {
 function setSSH() {
 	# Applies to VPS
 	echo "======================================================================"
-	if ! (grep -q -x 'PasswordAuthentication no' "${SSHD_CONF}"); then
+	if ! (grep -q -x 'PasswordAuthentication no' "$SSHD_CONF"); then
 		# Removes example entry at the bottom of sshd_config
-		sed -i 's/^PasswordAuthentication yes$//g' "${SSHD_CONF}"
-		sed -i 's/^.*PasswordAuthentication .*$/PasswordAuthentication no/g' "${SSHD_CONF}" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH password authentication."
+		sed -i 's/^PasswordAuthentication yes$//g' "$SSHD_CONF"
+		sed -i 's/^.*PasswordAuthentication .*$/PasswordAuthentication no/g' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH password authentication."
 	fi
 
-	if ! (grep -q -x 'PermitRootLogin no' "${SSHD_CONF}"); then
-		sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin no/' "${SSHD_CONF}" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH root login."
+	if ! (grep -q -x 'PermitRootLogin no' "$SSHD_CONF"); then
+		sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin no/' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH root login."
 	fi
 
-	if ! (grep -q -x 'Protocol 2' "${SSHD_CONF}"); then
-		sed -i 's/^.*Port .*$/&\nProtocol 2/' "${SSHD_CONF}" && echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
+	if ! (grep -q -x 'Protocol 2' "$SSHD_CONF"); then
+		sed -i 's/^.*Port .*$/&\nProtocol 2/' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
 	fi
 
 	echo -e "${BLUE}[i]${RESET}What port do you want SSH to listen to?"
@@ -446,10 +510,10 @@ function setSSH() {
 		;;
 	esac
 
-	sed -i 's/.*Port .*$/Port '"${PORT}"'/' "${SSHD_CONF}"
+	sed -i 's/.*Port .*$/Port '"${PORT}"'/' "$SSHD_CONF"
 
 	echo ""
-	ufw allow in on "${PUB_NIC}" to any proto tcp port "${PORT}" comment 'ssh'
+	ufw allow in on "$PUB_NIC" to any proto tcp port "${PORT}" comment 'ssh'
 	echo -e "${GREEN}[+]${RESET}Added ufw rules for SSH port ${PORT}."
 	echo ""
 	echo "Restart sshd.service now?"
@@ -472,10 +536,12 @@ function setSSH() {
 	sleep 3
 }
 
-function blockFirewire() {
+function blockKmods() {
 	# Applies to HW
 
-	echo "# Select the legacy firewire stack over the new CONFIG_FIREWIRE one.
+	function blockFirewire() {
+
+		echo "# Select the legacy firewire stack over the new CONFIG_FIREWIRE one.
 
 blacklist ohci1394
 blacklist sbp2
@@ -487,27 +553,23 @@ blacklist firewire-ohci
 blacklist firewire-sbp2
 blacklist firewire-core" >'/etc/modprobe.d/blacklist-firewire.conf'
 
-}
+	}
 
-function blockThunderbolt() {
-	# Applies to HW
-	if [ -e '/etc/modprobe.d/blacklist-thunderbolt.conf' ]; then
-		echo -e "${YELLOW}"'[!]'"${RESET}${BOLD}/etc/modprobe.d/blacklist-thunderbolt.conf already exists.${RESET}" 
-		echo -e "${YELLOW}"'[!]'"${RESET}Holding current configuration for review."
-		echo -e "${YELLOW}"'[!]'"${RESET}Only /etc/modprobe.d/blacklist-firewire.conf will be updated."
+	function blockThunderbolt() {
+		if [ -e '/etc/modprobe.d/blacklist-thunderbolt.conf' ]; then
+			echo -e "${YELLOW}"'[!]'"${RESET}${BOLD}/etc/modprobe.d/blacklist-thunderbolt.conf already exists.${RESET}" 
+			echo -e "${YELLOW}"'[!]'"${RESET}Holding current configuration for review."
+			echo -e "${YELLOW}"'[!]'"${RESET}Only /etc/modprobe.d/blacklist-firewire.conf will be updated."
 
-	else
-		touch '/etc/modprobe.d/blacklist-thunderbolt.conf'
-		echo "# Disable Thunderbolt ports. Comment to enable
+		else
+			touch '/etc/modprobe.d/blacklist-thunderbolt.conf'
+			echo "# Disable Thunderbolt ports. Comment to enable
 
-blacklist thunderbolt" >'/etc/modprobe.d/blacklist-thunderbolt.conf'
-	fi
-}
+	blacklist thunderbolt" >'/etc/modprobe.d/blacklist-thunderbolt.conf'
+		fi
+	}
 
-function blockKmods() {
-	# Applies to HW
-
-	# This needs fixed in case a blacklist-thunderbolt.conf ever ships by default
+	# This needs fixed in case a `blacklist-thunderbolt.conf` ever ships by default
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Block thunderbolt and firewire kernel modules?" 
 	echo "(prevents connected devices from loading)"
@@ -517,6 +579,7 @@ function blockKmods() {
 	done
 
  	if [[ $KMOD_CHOICE == "y" ]]; then
+		# Run both functions to block thunderbolt and firewire, also check if they already exist
 		if ! (grep -qx 'blacklist firewire-core' '/etc/modprobe.d/blacklist-firewire.conf') ; then
 			echo ""
 			echo -e "${BLUE}[i]${RESET}Modifying /etc/modprobe.d/blacklist-firewire.conf"
@@ -531,6 +594,7 @@ function blockKmods() {
 			echo -e "${BLUE}[i]${RESET}Already updated. Skipping."
 		fi
 	elif [[ $KMOD_CHOICE == "n" ]]; then
+		# Reset the configurations back to their defaults
 		if [ -e '/etc/modprobe.d/blacklist-thunderbolt.conf' ]; then
 			echo -e "${BLUE}[-]${RESET}Removing /etc/modprobe.d/blacklist-thunderbolt.conf"
 			rm '/etc/modprobe.d/blacklist-thunderbolt.conf'
@@ -555,38 +619,71 @@ blacklist video1394
 }
 
 function setLockdown() {
-	if [[ $MAJOR_UBUNTU_VERSION -gt 18 ]]; then
+	if [ -e /sys/kernel/security/lockdown ]; then
 		echo "======================================================================"
 		if ! (mokutil --sb-state | grep -qx 'SecureBoot enabled'); then
 			echo ""
 			echo -e "${BLUE}[i]${RESET}SecureBoot is not enabled."
-			echo -e "${BLUE}[i]${RESET}Current kernel lockdown state: "
-			echo $(cat /sys/kernel/security/lockdown | grep -E "\[none\]|\[integrity\]|\[confidentiality\]")
+		else
 			echo ""
-			echo -e "${BLUE}[i]${RESET}Change kernel lockdown mode?"
-			until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
-				read -rp "CHOOSE NO IF YOU HAVE NOT TESTED THIS [y/n]: " LOCKDOWN_CHOICE
+			echo -e "${BLUE}[i]${RESET}SecureBoot is enabled."
+		fi
+		echo -e "${BLUE}[i]${RESET}Current kernel lockdown state: "
+		grep -E "\[none\]|\[integrity\]|\[confidentiality\]" /sys/kernel/security/lockdown
+		echo ""
+		echo -e "${BLUE}[i]${RESET}Change kernel lockdown mode?"
+		until [[ $LOCKDOWN_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "CHOOSE NO IF RUNNING UNSIGNED THIRD PARTY KERNEL MODULES [y/n]: " LOCKDOWN_CHOICE
+		done
+		if [[ $LOCKDOWN_CHOICE == "y" ]]; then
+			echo ""
+			echo "Enable which mode?"
+			echo ""
+			until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
+				read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
 			done
-			if [[ $LOCKDOWN_CHOICE == "y" ]]; then
-				echo ""
-				echo "Enable which mode?"
-				echo ""
-				until [[ $LOCKDOWN_MODE =~ ^(none|integrity|confidentiality)$ ]]; do
-					read -rp "[none|integrity|confidentiality]: " LOCKDOWN_MODE
-				done
-				echo ""
-				echo -e "${BLUE}[i]${RESET}Updating line 'GRUB_CMDLINE_LINUX' in /etc/default/grub"
-				sed -i 's/GRUB_CMDLINE_LINUX=".*"/GRUB_CMDLINE_LINUX="lockdown='"${LOCKDOWN_MODE}"'"/g' /etc/default/grub
-				sudo update-grub
+			echo ""
+			# Location of kernel commandline parameters on Ubuntu for Raspberry Pi (GRUB not present)
+			if [ -e /boot/firmware/nobtcmd.txt ]; then
+				KERNEL_CMDLINE=/boot/firmware/nobtcmd.txt
+				if grep -q '^.*lockdown=.*'  "$KERNEL_CMDLINE" ; then
+					# modify the GRUB command-line if a lockdown= arg already exists
+					# note no space between `\1` and `lockdown=`
+					sed -i 's/\(^.*\)lockdown=[^[:space:]]*\(.*\)/\1lockdown='"$LOCKDOWN_MODE"' \2/'  "$KERNEL_CMDLINE"
+				else 
+					# no lockdown=arg is present, append it
+					# note the additional space between `\1` and `lockdown=`
+					sed -i 's/\(^.*\)/\1 lockdown='"$LOCKDOWN_MODE"'/'  "$KERNEL_CMDLINE"
+				fi
+			# Otherwise default back to location to edit kernel commandline parameters on Ubuntu
+			elif [ -e /etc/default/grub ]; then
+				KERNEL_CMDLINE=/etc/default/grub
+				if grep -q '^GRUB_CMDLINE_LINUX=.*lockdown=.*"'  "$KERNEL_CMDLINE" ; then
+					# modify the GRUB command-line if a lockdown= arg already exists
+					sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)lockdown=[^[:space:]]*\(.*"\)/\1 lockdown='"$LOCKDOWN_MODE"' \2/'  "$KERNEL_CMDLINE"
+				else
+					# no lockdown=arg is present, append it
+					sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)"/\1 lockdown='"$LOCKDOWN_MODE"'"/'  "$KERNEL_CMDLINE"
+				fi
+				update-grub
+			else
+				KERNEL_CMDLINE='null'
+				echo -e "${YELLOW}[i]${RESET}Can't find a configuration file to enable lockdown. Skipping..."
+			fi
+			if ! [[ "$KERNEL_CMDLINE" == 'null' ]]; then
+				echo -e "${BLUE}[i]${RESET}Kernel commandline arguments updated in $KERNEL_CMDLINE"
 				echo -e "${BLUE}[i]${RESET}Lockdown mode changes won't take effect until next reboot."
 			fi
 		fi
+	else
+		# If lockdown mode doesn't exist for this kernel
+		echo -e "${BLUE}[i]${RESET}Lockdown mode not supported."
 	fi
 }
 
 function setGnupg() {
 	# Applies to VM,HW
-	if ! [ -e "${HOME_DIR}"/.gnupg/gpg.conf ]; then
+	if ! [ -e "$HOME_DIR"/.gnupg/gpg.conf ]; then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}GnuPG"
 		echo "Harden gpg.conf and add smart card support for ssh to .bashrc file?"
@@ -614,22 +711,21 @@ with-fingerprint
 require-cross-certification
 no-symkey-cache
 use-agent
-throw-keyids" >"${HOME_DIR}"/.gnupg/gpg.conf
+throw-keyids" >"$HOME_DIR"/.gnupg/gpg.conf
 
 			echo "enable-ssh-support
 default-cache-ttl 60
 max-cache-ttl 120
-pinentry-program /usr/bin/pinentry-curses" >"${HOME_DIR}"/.gnupg/gpg-agent.conf
+pinentry-program /usr/bin/pinentry-curses" >"$HOME_DIR"/.gnupg/gpg-agent.conf
 
-			if !(grep -qx '# enable gpg smart card support for ssh' "${HOME_DIR}"/.bashrc); then
+			if ! (grep -qx '# enable gpg smart card support for ssh' "$HOME_DIR"/.bashrc); then
 				echo '
 # enable gpg smart card support for ssh
 export GPG_TTY="$(tty)"
 export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
-gpgconf --launch gpg-agent' >>"${HOME_DIR}"/.bashrc
+gpgconf --launch gpg-agent' >>"$HOME_DIR"/.bashrc
 			fi
-			chown "${UID1000}" "${HOME_DIR}"/.gnupg/gpg*
-			chgrp "${UID1000}" "${HOME_DIR}"/.gnupg/gpg*
+			chown -R "$UID1000":"$UID1000" "$HOME_DIR"/.gnupg/gpg*
 		fi
 	fi
 }
@@ -652,283 +748,11 @@ function updateAppArmor() {
   deny @{HOME}/snap/ r, 
   deny /boot/ r,
   deny /opt/ r,
-  deny /snap/ r," >"${AA_FIREFOX_LOCAL}"
+  deny /snap/ r," >"$AA_FIREFOX_LOCAL"
 
-	apparmor_parser -r "${AA_FIREFOX}"
+	apparmor_parser -r "$AA_FIREFOX"
   
   	echo -e "${BLUE}[i]${RESET}Checking Firefox AppArmor profile."
-}
-
-function setPolicies() {
-	# Applies to VM
-
-	# Policy files
-	FF_CFG="firefox.cfg"
-	FF_AUTOJS="autoconfig.js"
-	FF_POLICY_JSON="policies.json"
-	# Install policies
-	echo -e "${BLUE}[i]${RESET}Checking Firefox policy files."
-
-	if ! [ -e "/usr/lib/firefox/${FF_CFG}" ] && [ "${VM}" = "true" ]; then
-		chmod 644 "${FF_CFG}" && cp "${FF_CFG}" -t /usr/lib/firefox/ 2>/dev/null && rm "${FF_CFG}" && echo -e "${GREEN}[+]${RESET}Installing ${FF_CFG}." || echo -e "${RED}"'[!]'"Missing ${FF_CFG}, and cannot locate policy file to install.${RESET}"
-	fi
-	if ! [ -e "/usr/lib/firefox/defaults/pref/${FF_AUTOJS}" ] && [ "${VM}" = "true" ]; then
-		chmod 644 "${FF_AUTOJS}" && cp "${FF_AUTOJS}" -t /usr/lib/firefox/defaults/pref/ 2>/dev/null && rm "${FF_AUTOJS}" && echo -e "${GREEN}[+]${RESET}Installing ${FF_AUTOJS}." || echo -e "${RED}"'[!]'"Missing ${FF_AUTOJS}, and cannot locate policy file to install.${RESET}"
-	fi
-	if ! [ -e "/usr/lib/firefox/distribution/${FF_POLICY_JSON}" ] && [ "${VM}" = "true" ]; then
-		chmod 644 "${FF_POLICY_JSON}" && cp "${FF_POLICY_JSON}" -t /usr/lib/firefox/distribution/ 2>/dev/null && rm "${FF_POLICY_JSON}" && echo -e "${GREEN}[+]${RESET}Installing ${FF_POLICY_JSON}." || echo -e "${RED}"'[!]'"Missing ${FF_POLICY_JSON}, and cannot locate policy file to install.${RESET}"
-	fi
-}
-
-function makeTemp() {
-	export SETUPAUDITDIR=$(mktemp -d)
-	if (ls -l | grep -q "40-.*.rules"); then
-		cp 40-*.rules $SETUPAUDITDIR
-	fi
-	cd $SETUPAUDITDIR
-	echo ""
-	echo -e "${BLUE}[i]${RESET}Changing working directory to $SETUPAUDITDIR"
-
-}
-
-function checkCurrentRules() {
-	# Check for any currently installed rules
-	if $(ls "${AUDIT_RULES_D}" | grep -q ".rules"); then
-		echo "======================================================================"
-		echo -e "${RED}[-]${RESET}Currently installed auditd rule file(s) to remove:"
-		echo "$(ls ${AUDIT_RULES_D} | grep '.rules' || echo 'none')"
-		echo ""
-		echo -e "${GREEN}[+]${RESET}Custom auditd rule file(s) to be installed:"
-		echo "$(ls ${SETUPAUDITDIR} | grep '.rules' || echo 'none')"
-		echo ""
-		echo -e "${BLUE}[i]${RESET}Proceeding erases all currently installed rules."
-		echo -e "${BLUE}[i]${RESET}To keep any custom rules currently installed, copy them now to"
-		echo "   the directory this script was started from before continuing."
-		echo ""
-		until [[ $CONTINUE_SETUP =~ ^(y|n)$ ]]; do
-			read -rp "Continue with setup? [y/n]: " CONTINUE_SETUP
-		done
-		if [[ $CONTINUE_SETUP == "n" ]]; then
-			exit 1
-		elif [[ $CONTINUE_SETUP == "y" ]]; then
-			rm "${AUDIT_RULES_D}"* 2>/dev/null
-		fi
-	# Reset all other rules
-	else
-		rm "${AUDIT_RULES_D}"* 2>/dev/null
-	fi
-}
-
-function setLogFormat() {
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set the logging ${BOLD}format${RESET}"
-	echo -e "${BOLD}RAW${RESET} = Machine-readable"
-	echo -e "${BOLD}ENRICHED${RESET} = Human-readable"
-	echo ""
-	until [[ $LOG_FORMAT =~ (RAW|ENRICHED) ]]; do
-		read -rp "log_format = " -e -i ENRICHED LOG_FORMAT
-	done
-}
-
-function setLogSize() {
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set the ${BOLD}file size${RESET} of each log"
-	echo -e "${BLUE}[i]${RESET}The default size works well in most cases"
-	echo -e "${BLUE}[i]${RESET}Default setting: ${BOLD}8${RESET} (8MB)"
-	echo ""
-	until [[ $LOG_SIZE =~ ^[0-9]+$ ]] && [ "$LOG_SIZE" -ge 1 ] && [ "$LOG_SIZE" -le 50 ]; do
-		read -rp "max_log_file (MB) = " -e -i 8 LOG_SIZE
-	done
-}
-
-function setLogNumber() {
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set the ${BOLD}number of log files${RESET} to maintain locally"
-	echo -e "${BLUE}[i]${RESET}Use more if you aren't shipping to a central logging server."
-	echo -e "${BLUE}[i]${RESET}Default setting: ${BOLD}8${RESET}"
-	echo ""
-	until [[ $NUM_LOGS =~ ^[0-9]+$ ]] && [ "$NUM_LOGS" -ge 1 ] && [ "$NUM_LOGS" -le 65535 ]; do
-		read -rp "num_logs = " -e -i 8 NUM_LOGS
-	done
-}
-
-function setBuffer() {
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set auditd's ${BOLD}buffer size${RESET}"
-	echo -e "${BLUE}[i]${RESET}For busy systems, increase and test this number"
-	echo -e "${BLUE}[i]${RESET}Default setting: ${BOLD}8192${RESET}"
-	echo ""
-	until [[ $BUFFER_SIZE =~ ^[0-9]+$ ]] && [ "$BUFFER_SIZE" -ge 1 ] && [ "$BUFFER_SIZE" -le 65535 ]; do
-		read -rp "buffer_size (-b) = " -e -i 8192 BUFFER_SIZE
-	done
-}
-
-function setSiteRules() {
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Set site-specific rules"
-	echo "The default policy templates that ship with auditd include:"
-	echo -e "${BOLD}	nispom | ospp | pci | stig | none${RESET}"
-	echo -e "If not using custom rules, ${BLUE}stig${RESET} is a good choice"
-	echo -e "If custom rules will be installed, choosing ${BLUE}none${RESET} is recommended"
-	echo ""
-	until [[ $SITE_RULES =~ ^(nispom|ospp|pci|stig|none)$ ]]; do
-			read -rp "Enter a choice (lowercase): " -e -i none SITE_RULES
-	done
-}
-
-function checkLocalRules() {
-	# Check to make sure user's custom/local rules are present if no site rules chosen
-	if [[ ${SITE_RULES} == 'none' ]]; then
-		if ! (ls | grep -q '40-'); then
-			echo -e "${RED}[i]${RESET}No site rules were chosen and no custom rules are present. Quitting."
-			exit 1
-		fi
-	fi
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Auditd expects custom rules to be named ${BOLD}'40-<name>.rules'${RESET}"
-	echo -e "${BLUE}[i]${RESET}Be sure all custom rules are compatible with each other"
-	echo -e "${BLUE}[i]${RESET}Be sure all custom rules are in the same directory as this script"
-	echo -e "${BLUE}[i]${RESET}All components are copied to a temporary directory."
-	echo -e "${BLUE}[i]${RESET}To make any changes to your custom rules, Ctrl+c quit here,"
-	echo -e "${BLUE}[i]${RESET}then rerun this script."
-	echo ""
-	until [[ ${RULES_OK} =~ ^(OK)$ ]]; do
-		read -rp "Type 'OK' then press enter to continue > " RULES_OK
-	done
-	echo "======================================================================"
-}
-
-function collectAllRules() {
-	# Gather all rule files to cwd
-	BASE="${AUDIT_DOCS}10-base-config.rules"
-	LOGINUID="${AUDIT_DOCS}11-loginuid.rules"
-	NO32BIT="${AUDIT_DOCS}21-no32bit.rules"
-	LOCAL="$(pwd)/40-*.rules"
-	CONTAINER="${AUDIT_DOCS}41-containers.rules"
-	INJECT="${AUDIT_DOCS}42-injection.rules"
-	KMOD="${AUDIT_DOCS}43-module-load.rules"
-	NET="${AUDIT_DOCS}71-networking.rules"
-	FIN="${AUDIT_DOCS}99-finalize.rules"
-
-	cp "${BASE}" "${LOGINUID}" "${NO32BIT}" "${CONTAINER}" "${INJECT}" "${KMOD}" "${NET}" "${FIN}" .
-
-	# Site rules need gathered separately, too many ospp rules for one variable?
-	if [[ ${SITE_RULES} == 'nispom' ]]; then
-		cp "${AUDIT_DOCS}"30-nispom*.rules* .
-	elif [[ ${SITE_RULES} == 'pci' ]]; then
-		cp "${AUDIT_DOCS}"30-pci*.rules* .
-	elif [[ ${SITE_RULES} == 'ospp' ]]; then
-		cp "${AUDIT_DOCS}"$(ls "${AUDIT_DOCS}" | grep "30-ospp-v[0-9][0-9].rules*") .
-	elif [[ ${SITE_RULES} == 'stig' ]]; then
-		cp "${AUDIT_DOCS}"30-stig*.rules* .
-	elif [[ ${SITE_RULES} == 'none' ]]; then
-		echo "## Site specific rules placeholder file" > 30-site.rules
-	fi
-
-	# Gunzip package rules if they're archived
-	if [ -e *.rules.gz ]; then
-		gunzip *.rules.gz
-	fi
-
-	# Use default local rules placeholder if none / no custom rules are present
-	if ! (ls | grep -q '40-'); then
-		cp "${AUDIT_DOCS}40-local.rules" .
-	fi
-}
-
-function applySettings() {
-	# Apply the settings chosen by user during setup
-	# /etc/audit/auditd.conf changes:
-	if [ -e "${AUDITD_CONF}" ]; then
-		echo ""
-		grep -q -x "log_format = ${LOG_FORMAT}" "${AUDITD_CONF}" || (sed -i 's/^log_format = .*$/log_format = '"${LOG_FORMAT}"'/' "${AUDITD_CONF}")
-		grep -q -x "num_logs = ${NUM_LOGS}" "${AUDITD_CONF}" || (sed -i 's/^num_logs = .*$/num_logs = '"${NUM_LOGS}"'/' "${AUDITD_CONF}")
-		grep -q -x "max_log_file = ${LOG_SIZE}" "${AUDITD_CONF}" || (sed -i 's/^max_log_file = .*$/max_log_file = '"${LOG_SIZE}"'/' "${AUDITD_CONF}")
-	else
-		echo -e "${RED}"'[!]'"Missing auditd.conf file.${RESET}"
-		exit 1
-	fi
-	# Next, set the buffer size in 10-base-config.rules, if this file is missing we'll see below
-	if [ -e 10-base-config.rules ]; then
-		sed -i 's/^-b.*$/-b '"${BUFFER_SIZE}"'/' 10-base-config.rules
-	fi
-}
-
-function adjustRules() {
-	# Make any adjustments to the built in rule files from /usr/share/**rules here
-	# This will need a better solution going forward
-
-	# Offer to comment out non-essential built in rules if using a local/custom rules file
-	if [[ ${SITE_RULES} == 'none' ]]; then
-		echo "To avoid overlap with custom rules, would you like"
-		echo "comment out the non-essential built in rules?"
-		echo ""
-		until [[ $COMMENT_BUILTINS =~ ^(y|n)$ ]]; do
-			read -rp "[y/n]?: " -e -i y COMMENT_BUILTINS
-		done
-	fi
-	if [[ $COMMENT_BUILTINS == 'y' ]]; then
-		sed -i 's/^-a/#-a/' "21-no32bit.rules"
-		sed -i 's/^-a/#-a/' "42-injection.rules"
-		sed -i 's/^-a/#-a/' "43-module-load.rules"
-		sed -i 's/^-a/#-a/' "71-networking.rules"
-	fi
-}
-
-function setAuditing() {
-	# Putting everything together
-
-	# Set rules to be immutable
-	sed -i 's/#-e 2/-e 2/' "99-finalize.rules"
-
-	# Remove placeholder policy file
-	if [ -e "${AUDIT_RULES_D}"audit.rules ]; then
-		rm "${AUDIT_RULES_D}"audit.rules
-	fi
-
-	RULES[0]="10-base-config.rules"
-	RULES[1]="11-loginuid.rules"
-	RULES[2]="21-no32bit.rules"
-	RULES[3]="30-*.rules"
-	RULES[4]="40-*.rules"
-	RULES[5]="41-containers.rules"
-	RULES[6]="42-injection.rules"
-	RULES[7]="43-module-load.rules"
-	RULES[8]="71-networking.rules"
-	RULES[9]="99-finalize.rules"
-
-	for RULE in ${RULES[@]}; do
-		if [[ -e "${RULE}" ]]; then
-			chmod 440 "${RULE}" && cp "${RULE}" -t "${AUDIT_RULES_D}" 2>/dev/null && rm "${RULE}" && echo -e "${GREEN}[+]${RESET}${BOLD}Installing ${RULE}${RESET}"
-		else
-			echo -e "${RED}"'[!]'"Missing ${RULE}, and cannot locate rule file to install.${RESET}"
-		fi
-	done
-
-	# Cleanup
-	cd /tmp && \
-	rm -rf $SETUPAUDITDIR
-
-	# Check for any errors
-	echo ""
-	echo -e "${GREEN}[i]${RESET}Running augenrules --check"
-	augenrules --check 2>&1
-	echo -e "${GREEN}[i]${RESET}Running augenrules --load to update rules"
-	augenrules --load 2>&1
-	echo "======================================================================"
-	echo -e "${BLUE}[^]${RESET}Any errors above this line should be fixed in their rule file"
-	echo -e "${BLUE}[^]${RESET}Review the line numbers called out in /etc/audit/audit.rules"
-	echo -e "${BLUE}[^]${RESET}When tuning rules, edit the files in /etc/audit/rules.d/*"
-	echo -e "${BLUE}[^]${RESET}Run augenrules --check && augenrules --load, then reboot to load"
-	echo -e "${BLUE}[^]${RESET}edited rules after making changes"
-
-	echo ""
-	echo -e "${BLUE}[>]${RESET}${BOLD}Log format = ${LOG_FORMAT}${RESET}"
-	echo -e "${BLUE}[>]${RESET}${BOLD}Log file size = ${LOG_SIZE}MB${RESET}"
-	echo -e "${BLUE}[>]${RESET}${BOLD}Number of logs = ${NUM_LOGS}${RESET}"
-	echo -e "${BLUE}[>]${RESET}${BOLD}Buffer size = ${BUFFER_SIZE}${RESET}"
-	echo ""
-	echo -e "${BLUE}[✓]${RESET}Done. Reminder: auditd rules aren't locked until ${BOLD}after${RESET} next reboot."
 }
 
 # Command-Line-Arguments
@@ -965,8 +789,9 @@ function manageMenu() {
 function installVM() {
 	echo ""
 	VM='true'
-	#Functions
+	# Functions
 	setPerms
+	checkSudoers
 	#removeBrowser
 	stopServices
 	#updateServices
@@ -974,6 +799,7 @@ function installVM() {
 	setIpv6
 	setFirewall
 	updatePackages
+	setResolver
 	installPackages
 	addGroups
 	removeGroups
@@ -985,26 +811,14 @@ function installVM() {
 	setLockdown
 	setGnupg
 	updateAppArmor
-	setPolicies
-	makeTemp
-	checkCurrentRules
-	setLogFormat
-	setLogSize
-	setLogNumber
-	setBuffer
-	setSiteRules
-	checkLocalRules
-	collectAllRules
-	applySettings
-	adjustRules
-	setAuditing
 }
 
 function installHW() {
 	echo ""
 	HW='true'
-	#Functions
+	# Functions
 	setPerms
+	checkSudoers
 	removeBrowser
 	stopServices
 	#updateServices
@@ -1012,6 +826,7 @@ function installHW() {
 	setIpv6
 	setFirewall
 	updatePackages
+	setResolver
 	installPackages
 	#addGroups
 	removeGroups
@@ -1023,26 +838,14 @@ function installHW() {
 	setLockdown
 	setGnupg
 	#updateAppArmor
-	#setPolicies
-	makeTemp
-	checkCurrentRules
-	setLogFormat
-	setLogSize
-	setLogNumber
-	setBuffer
-	setSiteRules
-	checkLocalRules
-	collectAllRules
-	applySettings
-	adjustRules
-	setAuditing
 }
 
 function installVPS() {
 	echo ""
 	VPS='true'
-	#Functions
+	# Functions
 	setPerms
+	checkSudoers
 	#removeBrowser
 	#stopServices
 	updateServices
@@ -1050,6 +853,7 @@ function installVPS() {
 	setIpv6
 	setFirewall
 	updatePackages
+	setResolver
 	installPackages
 	#addGroups
 	removeGroups
@@ -1061,19 +865,6 @@ function installVPS() {
 	setLockdown
 	#setGnupg
 	#updateAppArmor
-	#setPolicies
-	makeTemp
-	checkCurrentRules
-	setLogFormat
-	setLogSize
-	setLogNumber
-	setBuffer
-	setSiteRules
-	checkLocalRules
-	collectAllRules
-	applySettings
-	adjustRules
-	setAuditing
 }
 
 manageMenu
