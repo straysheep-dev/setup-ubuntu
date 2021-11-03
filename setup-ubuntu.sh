@@ -394,7 +394,7 @@ function installPackages() {
 		if (dmesg | grep -q 'vmware'); then
 			apt install -y open-vm-tools-desktop
 		fi
-		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl nmap pcscd python3-pip python3-venv resolvconf rkhunter scdaemon tmux usbguard wireguard wireshark
+		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl nmap pcscd python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
 		snap install chromium
 		snap install libreoffice
 		snap install vlc
