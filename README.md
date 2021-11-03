@@ -2,7 +2,7 @@
 Automatically configure an Ubuntu 18.04 (or later) workstation, vm, or server.
 
 ```bash
-./gsettings.sh
+sudo ./gsettings.sh
 sudo ./setup-ubuntu.sh
 ```
 If you encounter:
@@ -24,6 +24,6 @@ Identity added: /home/test/.ssh/id_rsa (test@test)
 ## To do:
 
 - [ ] Make revert functions to undo all changes
-- [ ] Review output of `shellcheck` and make any fixes
+- [x] Review output of `shellcheck` and make any fixes
 - [ ] Review Ubuntu 18.04/20.04 guidelines from [OpenSCAP](https://www.open-scap.org/security-policies/choosing-policy/)
-- [ ] Check unbound and systemd-resolved services 
+- [x] Check unbound and systemd-resolved services 
