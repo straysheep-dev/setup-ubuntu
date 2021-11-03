@@ -2,7 +2,7 @@
 Automatically configure an Ubuntu 18.04 (or later) workstation, vm, or server.
 
 ```bash
-sudo ./gsettings.sh
+sudo ./dconf.sh
 sudo ./setup-ubuntu.sh
 ```
 If you encounter:
