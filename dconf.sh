@@ -78,6 +78,8 @@ echo '# Disable autorun and automount of software and external media
 /org/gnome/desktop/media-handling/automount
 /org/gnome/desktop/media-handling/automount-open
 /org/gnome/desktop/media-handling/autorun-never' > "$LOCKS"/media-handling
+echo -e "${BLUE}[i]${RESET}Automount disabled"
+echo -e "${BLUE}[i]${RESET}Autorun disabled"
 
 
 echo '# Enable screen locking
@@ -85,6 +87,7 @@ echo '# Enable screen locking
 lock-enabled=true' > "$DCONFS"/00_screen-lock
 echo '# Enable screen locking
 /org/gnome/desktop/screensaver/lock-enabled' > "$LOCKS"/screen-lock
+echo -e "${BLUE}[i]${RESET}Screenlock enabled"
 
 
 echo "# Idle timeout for screen lock
@@ -92,6 +95,7 @@ echo "# Idle timeout for screen lock
 idle-delay='uint32 300'" > "$DCONFS"/00_screen-idle-lock
 echo '# Idle timeout for screen lock
 /org/gnome/desktop/session/idle-delay' > "$LOCKS"/screen-idle-lock
+echo -e "${BLUE}[i]${RESET}Screenlock on idle enabled"
 
 
 echo "# Prevent notifications from appearing in the lock screen
@@ -99,6 +103,7 @@ echo "# Prevent notifications from appearing in the lock screen
 show-in-lock-screen='false'" > "$DCONFS"/00_notifications
 echo '# Prevent notifications from appearing in the lock screen
 /org/gnome/desktop/notifications/show-in-lock-screen' > "$LOCKS"/notifications
+echo -e "${BLUE}[i]${RESET}Notifications on lock screen disabled"
 
 
 echo '# Show hidden files and folders
@@ -106,6 +111,7 @@ echo '# Show hidden files and folders
 show-hidden=true' > "$DCONFS"/00_show-hidden
 echo '# Show hidden files and folders
 /org/gtk/settings/file-chooser/show-hidden' > "$LOCKS"/show-hidden
+echo -e "${BLUE}[i]${RESET}Show hidden files enabled"
 
 
 echo '# Disable location settings
@@ -113,6 +119,7 @@ echo '# Disable location settings
 enabled=false' > "$DCONFS"/00_location
 echo '# Disable location settings
 /org/gnome/system/location/enabled' > "$LOCKS"/location
+echo -e "${BLUE}[i]${RESET}Location settings disabled"
 
 
 echo '# Prevent usb devices from being mounted and read while screen is locked
@@ -122,6 +129,8 @@ usb-protection=true' > "$DCONFS"/00_usb-protection
 echo '# Prevent usb devices from being mounted and read while screen is locked
 /org/gnome/desktop/privacy/usb-protection
 /org/gnome/desktop/privacy/usb-protection-level' > "$LOCKS"/usb-protection
+echo -e "${BLUE}[i]${RESET}USB mount protection added to lock screen"
+
 
 echo "[i]Updating dconf databases..."
 
