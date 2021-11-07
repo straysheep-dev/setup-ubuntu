@@ -13,7 +13,7 @@ UID1000="$(grep 1000 /etc/passwd | cut -d ':' -f 1)"
 MAJOR_UBUNTU_VERSION=$(grep VERSION_ID /etc/os-release | cut -d '"' -f2 | cut -d '.' -f 1)
 
 # Locked key / value pairs are still changeable on 18.04 for some reason.
-if [[ $MAJOR_UBUNTU_VERSION -le 20 ]]; then
+if [[ $MAJOR_UBUNTU_VERSION -lt 20 ]]; then
 	echo "[i] Some settings aren't locking on 18.04. Use gsettings.sh"
 	echo "Quitting..."
 	exit 1
@@ -122,10 +122,10 @@ echo '# Disable location settings
 echo -e "${BLUE}[i]${RESET}Location settings disabled"
 
 
-echo '# Prevent usb devices from being mounted and read while screen is locked
+echo "# Prevent usb devices from being mounted and read while screen is locked
 [org/gnome/desktop/privacy]
-usb-protection-level=lockscreen
-usb-protection=true' > "$DCONFS"/00_usb-protection
+usb-protection-level='lockscreen'
+usb-protection=true" > "$DCONFS"/00_usb-protection
 echo '# Prevent usb devices from being mounted and read while screen is locked
 /org/gnome/desktop/privacy/usb-protection
 /org/gnome/desktop/privacy/usb-protection-level' > "$LOCKS"/usb-protection
