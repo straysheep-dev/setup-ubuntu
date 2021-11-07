@@ -307,17 +307,42 @@ function setFirewall() {
 	fi
 }
 
-function updatePackages() {
-	# Applies to VM, HW, VPS
-	echo "======================================================================"
-	echo -e "${BLUE}[i]${RESET}Updating packages."
-	apt update && \
-	apt upgrade -y
-	sleep 1
-	echo ""
-	echo -e "${BLUE}[i]${RESET}Autoremoving packages."
-	apt autoremove --purge -y
+function checkPackages() {
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-standard.html
+	# xccdf_org.ssgproject.content_rule_package_inetutils-telnetd_removed
+	# xccdf_org.ssgproject.content_rule_package_telnetd-ssl_removed
+	# xccdf_org.ssgproject.content_rule_package_telnetd_removed
+	# xccdf_org.ssgproject.content_rule_package_nis_removed
+	# xccdf_org.ssgproject.content_rule_package_ntpdate_removed
+
+	echo "[-]Removing any deprecated packages and protocols..."
+	apt-get autoremove --purge -y inetutils-telnetd telnetd-ssl telnetd nis ntpdate
+
+	sleep 2
+
+	echo -e "${BLUE}[i]${RESET}Upgrading pypi base packages..."
+	if (command -v pip3); then
+		pkexec --user "$UID1000" python3 -m pip install --upgrade pip setuptools wheel
+	fi
+
+	echo -e "${BLUE}[i]${RESET}Upgrading apt packages..."
+	sleep 3
+	apt-get update && \
+	apt-get upgrade -y
+	sleep 2
+	echo -e "${BLUE}[i]${RESET}Autoremoving old packages."
 	apt-get clean
+	apt-get autoremove --purge -y
+	sleep 5
+
+	echo -e "${BLUE}[i]${RESET}Checking for snap packages..."
+	if (command -v snap); then
+		snap refresh
+	fi
+
+	sleep 1
+
 }
 
 function setResolver() {
@@ -362,19 +387,19 @@ function installPackages() {
 	echo -e ""
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
 	if [ "$VPS" = "true" ]; then
-		apt install -y aide auditd easy-rsa openvpn qrencode resolvconf rkhunter wireguard
+		apt install -y aide auditd easy-rsa openvpn qrencode resolvconf rkhunter tmux wireguard
 	elif [ "$HW" = "true" ]; then
-		apt install -y auditd apparmor-utils curl git pcscd resolvconf rkhunter scdaemon usb-creator-gtk usbguard wireguard
+		apt install -y auditd apparmor-utils curl git pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
 	elif [ "$VM" = "true" ]; then
 		if (dmesg | grep -q 'vmware'); then
 			apt install -y open-vm-tools-desktop
 		fi
-		apt install -y auditd apparmor-utils curl git hexedit nmap pcscd python3-pip python3-venv resolvconf rkhunter scdaemon usbguard wireguard wireshark
+		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl nmap pcscd python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		snap install chromium
+		snap install libreoffice
+		snap install vlc
 	fi
 	echo -e "${BLUE}[+]${RESET}All essential packages installed.${RESET}"
-	sleep 1
-	echo -e "${BLUE}[+]${RESET}Refreshing all snaps."
-	snap refresh
 	sleep 1
 }
 
@@ -798,7 +823,7 @@ function installVM() {
 	#addVBox
 	setIpv6
 	setFirewall
-	updatePackages
+	checkPackages
 	setResolver
 	installPackages
 	addGroups
@@ -825,7 +850,7 @@ function installHW() {
 	addVBox
 	setIpv6
 	setFirewall
-	updatePackages
+	checkPackages
 	setResolver
 	installPackages
 	#addGroups
@@ -852,7 +877,7 @@ function installVPS() {
 	#addVBox
 	setIpv6
 	setFirewall
-	updatePackages
+	checkPackages
 	setResolver
 	installPackages
 	#addGroups
