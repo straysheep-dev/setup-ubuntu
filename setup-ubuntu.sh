@@ -78,12 +78,11 @@ checkHostname
 
 function checkOS() {
 	# Check OS version
-	source /etc/os-release
-	OS="${VERSION_CODENAME}" # debian or ubuntu
-	echo -e "${BLUE}[i]${RESET}Ubuntu '${VERSION_CODENAME}' detected."
-	if [[ $ID == "ubuntu" ]]; then
-		OS="ubuntu"
-		MAJOR_UBUNTU_VERSION=$(echo "$VERSION_ID" | cut -d '.' -f1)
+	OS="$(grep -E "^ID=" /etc/os-release | cut -d '=' -f 2)"
+	CODENAME="$(grep VERSION_CODENAME /etc/os-release | cut -d '=' -f 2)" # debian or ubuntu
+	echo -e "${BLUE}[i]${RESET}$OS $CODENAME detected."
+	if [[ $OS == "ubuntu" ]]; then
+		MAJOR_UBUNTU_VERSION=$(grep VERSION_ID /etc/os-release | cut -d '"' -f2 | cut -d '.' -f 1)
 		if [[ $MAJOR_UBUNTU_VERSION -lt 18 ]]; then
 			echo "⚠️ Your version of Ubuntu is not supported."
 			echo ""
@@ -98,7 +97,6 @@ function checkOS() {
 		fi
 	fi
 }
-
 checkOS
 
 
