@@ -319,8 +319,8 @@ function checkPackages() {
 
 	sleep 2
 
-	echo -e "${BLUE}[i]${RESET}Upgrading pypi base packages..."
 	if (command -v pip3); then
+		echo -e "${BLUE}[i]${RESET}Upgrading pypi base packages..."
 		pkexec --user "$UID1000" python3 -m pip install --upgrade pip setuptools wheel
 	fi
 
@@ -334,8 +334,9 @@ function checkPackages() {
 	apt-get autoremove --purge -y
 	sleep 5
 
-	echo -e "${BLUE}[i]${RESET}Checking for snap packages..."
+
 	if (command -v snap); then
+		echo -e "${BLUE}[i]${RESET}Checking for snap packages..."
 		snap refresh
 	fi
 
@@ -753,14 +754,19 @@ gpgconf --launch gpg-agent' >>"$HOME_DIR"/.bashrc
 	fi
 }
 
-function updateAppArmor() {
-	# Applies to VM
-	echo "======================================================================"
-	if [ -e "/etc/apparmor.d/disable/usr.bin.firefox" ]; then
-		rm /etc/apparmor.d/disable/usr.bin.firefox
-	fi
+function checkAppArmor() {
+	# Applies to VM,HW,VPS
 
-	echo "# Site-specific additions and overrides for usr.bin.firefox.
+	echo "======================================================================"
+
+	echo -e "${BLUE}[i]${RESET}Checking AppArmor profiles."
+
+	if (command -v firefox); then
+		if [ -e "/etc/apparmor.d/disable/usr.bin.firefox" ]; then
+		    rm /etc/apparmor.d/disable/usr.bin.firefox
+		fi
+
+		echo "# Site-specific additions and overrides for usr.bin.firefox.
 # For more details, please see /etc/apparmor.d/local/README.
   deny @{HOME}/Desktop/ r,
   deny @{HOME}/Documents/ r,
@@ -773,9 +779,10 @@ function updateAppArmor() {
   deny /opt/ r,
   deny /snap/ r," >"$AA_FIREFOX_LOCAL"
 
-	apparmor_parser -r "$AA_FIREFOX"
-  
-  	echo -e "${BLUE}[i]${RESET}Checking Firefox AppArmor profile."
+		apparmor_parser -r "$AA_FIREFOX"
+	fi
+
+	echo -e "${BLUE}[i]${RESET}Done."
 }
 
 # Command-Line-Arguments
@@ -833,7 +840,7 @@ function installVM() {
 	#blockKmods
 	setLockdown
 	setGnupg
-	updateAppArmor
+	checkAppArmor
 }
 
 function installHW() {
@@ -860,7 +867,7 @@ function installHW() {
 	blockKmods
 	setLockdown
 	setGnupg
-	#updateAppArmor
+	#checkAppArmor
 }
 
 function installVPS() {
@@ -887,7 +894,7 @@ function installVPS() {
 	#blockKmods
 	setLockdown
 	#setGnupg
-	#updateAppArmor
+	#checkAppArmor
 }
 
 manageMenu
