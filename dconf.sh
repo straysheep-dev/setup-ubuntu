@@ -1,15 +1,24 @@
 #!/bin/bash
 
+# To test keys use `dconf read/write` not `gsettings`
+
+# The profile file itself must be named 'user' -> /etc/dconf/profile/user
+# user-db:<name> must also be named 'user'
+# system-db:<name> can be any name
+
 BLUE="\033[01;34m"     # Information
 RESET="\033[00m"       # Reset
 
 UID1000="$(grep 1000 /etc/passwd | cut -d ':' -f 1)"
+MAJOR_UBUNTU_VERSION=$(grep VERSION_ID /etc/os-release | cut -d '"' -f2 | cut -d '.' -f 1)
 
-# To test keys use `dconf read/write` not `gsettings`
+# Locked key / value pairs are still changeable on 18.04 for some reason.
+if [[ $MAJOR_UBUNTU_VERSION -le 20 ]]; then
+	echo "[i] Some settings aren't locking on 18.04. Use gsettings.sh"
+	echo "Quitting..."
+	exit 1
+fi
 
-# the profile file itself must be named 'user' -> /etc/dconf/profile/user
-# user-db:<name> must also be named 'user'
-# system-db:<name> can be any name
 
 function isRoot() {
 	if [ "${EUID}" -ne 0 ]; then
@@ -71,17 +80,17 @@ echo '# Disable autorun and automount of software and external media
 /org/gnome/desktop/media-handling/autorun-never' > "$LOCKS"/media-handling
 
 
-echo '# Lock screensaver
+echo '# Enable screen locking
 [org/gnome/desktop/screensaver]
 lock-enabled=true' > "$DCONFS"/00_screen-lock
-echo '# Lock screensaver
+echo '# Enable screen locking
 /org/gnome/desktop/screensaver/lock-enabled' > "$LOCKS"/screen-lock
 
 
-echo "# Force screen lock on idle
+echo "# Idle timeout for screen lock
 [org/gnome/desktop/session]
 idle-delay='uint32 300'" > "$DCONFS"/00_screen-idle-lock
-echo '# Force screen lock on idle
+echo '# Idle timeout for screen lock
 /org/gnome/desktop/session/idle-delay' > "$LOCKS"/screen-idle-lock
 
 
@@ -106,15 +115,13 @@ echo '# Disable location settings
 /org/gnome/system/location/enabled' > "$LOCKS"/location
 
 
-if [[ $MAJOR_UBUNTU_VERSION -gt 18 ]]; then
-	echo '# Prevent usb devices from being mounted and read while screen is locked
+echo '# Prevent usb devices from being mounted and read while screen is locked
 [org/gnome/desktop/privacy]
 usb-protection-level=lockscreen
 usb-protection=true' > "$DCONFS"/00_usb-protection
-	echo '# Prevent usb devices from being mounted and read while screen is locked
+echo '# Prevent usb devices from being mounted and read while screen is locked
 /org/gnome/desktop/privacy/usb-protection
 /org/gnome/desktop/privacy/usb-protection-level' > "$LOCKS"/usb-protection
-fi
 
 echo "[i]Updating dconf databases..."
 
