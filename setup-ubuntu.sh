@@ -319,11 +319,6 @@ function checkPackages() {
 
 	sleep 2
 
-	if (command -v pip3); then
-		echo -e "${BLUE}[i]${RESET}Upgrading pypi base packages..."
-		pkexec --user "$UID1000" python3 -m pip install --upgrade pip setuptools wheel
-	fi
-
 	echo -e "${BLUE}[i]${RESET}Upgrading apt packages..."
 	sleep 3
 	apt-get update && \
