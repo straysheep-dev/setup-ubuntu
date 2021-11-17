@@ -505,6 +505,7 @@ function setRkhunter() {
 			if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF"); then
 			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)"
+			fi
 		fi
 		if ! (grep -q -x "ALLOW_SSH_PROT_V1=0" "$RKHUNTER_CONF"); then
 			sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF"
