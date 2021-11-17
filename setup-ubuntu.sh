@@ -523,21 +523,92 @@ function setRkhunter() {
 function setSSH() {
 	# Applies to VPS
 	echo "======================================================================"
-	if ! (grep -q -x 'PasswordAuthentication no' "$SSHD_CONF"); then
-		# Removes example entry at the bottom of sshd_config
+	if ! [ -e /etc/ssh/sshd_config.bkup ]; then
+		cp /etc/ssh/sshd_config -t /etc/ssh/sshd_config.bkup
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_group_ssh_server
+
+	# Replace example entries or add the setting if missing
+
+	if ! (grep -Eq "^PasswordAuthentication no$" "$SSHD_CONF"); then
 		sed -i 's/^PasswordAuthentication yes$//g' "$SSHD_CONF"
-		sed -i 's/^.*PasswordAuthentication .*$/PasswordAuthentication no/g' "$SSHD_CONF" 
-		echo -e "${GREEN}[+]${RESET}Prohibiting SSH password authentication."
+		sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication no/g' "$SSHD_CONF" || \
+		echo "PasswordAuthentication no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PasswordAuthentication no"
 	fi
 
-	if ! (grep -q -x 'PermitRootLogin no' "$SSHD_CONF"); then
-		sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin no/' "$SSHD_CONF" 
-		echo -e "${GREEN}[+]${RESET}Prohibiting SSH root login."
+	if ! (grep -Eq 'PermitRootLogin no' "$SSHD_CONF"); then
+		sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin no/' "$SSHD_CONF" || \
+		echo "PermitRootLogin no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PermitRootLogin no"
 	fi
 
-	if ! (grep -q -x 'Protocol 2' "$SSHD_CONF"); then
-		sed -i 's/^.*Port .*$/&\nProtocol 2/' "$SSHD_CONF" 
+	if ! (grep -Eq "^Protocol 2$" "$SSHD_CONF"); then
+		sed -i 's/^.*Protocol.*$/&\nProtocol 2/' "$SSHD_CONF" || \
+		echo "Protocol 2" >> "$SSHD_CONF"
 		echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
+	fi
+
+	if ! ( grep -Eq "^PermitEmptyPasswords no$" "$SSHD_CONF"); then
+		sed -i 's/^.*PermitEmptyPasswords.*$/PermitEmptyPasswords no/' "$SSHD_CONF" || \
+		echo "PermitEmptyPasswords no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PermitEmptyPasswords no"
+	fi
+
+	# 600=10 minutes
+	if ! ( grep -Eq "^ClientAliveInterval 300$" "$SSHD_CONF"); then
+		sed -i 's/^.*ClientAliveInterval.*$/ClientAliveInterval 300/' "$SSHD_CONF" || \
+		echo "ClientAliveInterval 300" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: ClientAliveInterval 300"
+	fi
+
+	# set 0 for ClientAliveInterval to be exact
+	if ! ( grep -Eq "^ClientAliveCountMax 0$" "$SSHD_CONF"); then
+		sed -i 's/^.*ClientAliveCountMax.*$/ClientAliveCountMax 0/' "$SSHD_CONF" || \
+		echo "ClientAliveCountMax 0" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
+	fi
+
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_disable_host_auth
+	if ! ( grep -Eq "^HostbasedAuthentication no$" "$SSHD_CONF"); then
+		sed -i 's/^.*HostbasedAuthentication.*$/HostbasedAuthentication no/' "$SSHD_CONF" || \
+		echo "HostbasedAuthentication no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: HostbasedAuthentication no"
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_disable_rhosts
+	if ! ( grep -Eq "^IgnoreRhosts yes$" "$SSHD_CONF"); then
+		sed -i 's/^.*IgnoreRhosts.*$/IgnoreRhosts yes/' "$SSHD_CONF" || \
+		echo "IgnoreRhosts yes" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: IgnoreRhosts yes"
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_do_not_permit_user_env
+	if ! ( grep -Eq "^PermitUserEnvironment no$" "$SSHD_CONF"); then
+		sed -i 's/^.*PermitUserEnvironment.*$/PermitUserEnvironment no/' "$SSHD_CONF" || \
+		echo "PermitUserEnvironment no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PermitUserEnvironment no"
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_set_loglevel_info
+	if ! ( grep -Eq "^LogLevel INFO$" "$SSHD_CONF"); then
+		sed -i 's/^.*LogLevel INFO.*$/LogLevel INFO/' "$SSHD_CONF" || \
+		echo "LogLevel INFO" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: LogLevel INFO"
+	fi
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_set_max_auth_tries
+	if ! ( grep -Eq "^MaxAuthTries 4$" "$SSHD_CONF"); then
+		sed -i 's/^.*MaxAuthTries.*$/MaxAuthTries 4/' "$SSHD_CONF" || \
+		echo "MaxAuthTries 4" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: MaxAuthTries 4"
 	fi
 
 	echo -e "${BLUE}[i]${RESET}What port do you want SSH to listen to?"
