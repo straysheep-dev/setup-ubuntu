@@ -496,9 +496,11 @@ function setRkhunter() {
 		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "$RKHUNTER_CONF"); then
 			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)"
+		fi
 		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "$RKHUNTER_CONF"); then
 			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)"
+		fi
 		if [ "$VPS" = 'false' ]; then
 			if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF"); then
 			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF"
