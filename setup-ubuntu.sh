@@ -360,15 +360,23 @@ function setResolver() {
 				echo -e "${RED}[i]${RESET}Address any configuration errors above then re-run this script."
 				exit 1
 			else
-				# Apply latest conf
+				echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
+				if (systemctl is-active systemd-resolved); then
+					systemctl stop systemd-resolved
+				fi
+				if (systemctl is-enabled systemd-resolved); then
+					systemctl disable systemd-resolved
+				fi
+
+				# Apply latest conf and restart
 				systemctl restart unbound
-			fi
-			echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
-			if (systemctl is-active systemd-resolved); then
-				systemctl stop systemd-resolved
-			fi
-			if (systemctl is-enabled systemd-resolved); then
-				systemctl disable systemd-resolved
+				
+				sleep 2
+				
+				if ! (grep -Eq "^nameserver[[:space:]]127.0.0.1$" /etc/resolv.conf); then
+					echo -e "${YELLOW}[i]${RESET}Pointing /etc/resolv.conf to unbound on 127.0.0.1..."
+					sed -i 's/^nameserver[[:space:]]127.0.0.53/nameserver 127.0.0.1/' /etc/resolv.conf || exit 1
+				fi
 			fi
 			echo -e "${BLUE}[i]${RESET}Done."
 		fi
