@@ -264,7 +264,7 @@ function setFirewall() {
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Modify the firewall rules?"
 	echo ""
-	echo -e "${RED}[i]${RESET}(choose 'y' if the ipv6 settings were just changed)"
+	echo -e "${RED}[i]${RESET}(choose 'y' if the ipv6 settings were just changed or if this is the first run)"
 	until [[ $UFW_CHOICE =~ ^(y|n)$ ]]; do
 		read -rp "[y/n]: " UFW_CHOICE
 	done
