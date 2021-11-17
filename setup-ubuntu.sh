@@ -481,17 +481,40 @@ function setRkhunter() {
 	chmod -x '/etc/cron.daily/rkhunter'
 
 	if [ -e "$RKHUNTER_CONF" ]; then
-		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "$RKHUNTER_CONF" || (sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)")
-		if [ "$VPS" = 'false' ]; then
-			grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)")
+		if ! (grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "$RKHUNTER_CONF"); then
+			sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "$RKHUNTER_CONF" 
+			echo -e "${BLUE}[*]${RESET}Updating rkhunter test list."
 		fi
-		grep -q -x "ALLOW_SSH_PROT_V1=0" "$RKHUNTER_CONF" || (sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Adding warning for detection of SSHv1 protocol.")
-		grep -q -x '#WEB_CMD="/bin/false"' "$RKHUNTER_CONF" || (sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Commenting out WEB_CMD="'"\/bin\/false"')
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)"
+		fi
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)"
+		fi
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)"
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)"
+		if [ "$VPS" = 'false' ]; then
+			if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)"
+		fi
+		if ! (grep -q -x "ALLOW_SSH_PROT_V1=0" "$RKHUNTER_CONF"); then
+			sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Adding warning for detection of SSHv1 protocol."
+		fi
+		if ! (grep -q -x '#WEB_CMD="/bin/false"' "$RKHUNTER_CONF"); then
+			sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Commenting out WEB_CMD="'"\/bin\/false"'
+		fi
+
 		rkhunter -C && echo -e "${GREEN}[+]${RESET}Reloading rkhunter profile."
+
 	elif ! [ -e "$RKHUNTER_CONF" ]; then
 		echo -e "${RED}"'[!]'"${RESET}rkhunter.conf file not found. Skipping."
 	fi
@@ -503,15 +526,18 @@ function setSSH() {
 	if ! (grep -q -x 'PasswordAuthentication no' "$SSHD_CONF"); then
 		# Removes example entry at the bottom of sshd_config
 		sed -i 's/^PasswordAuthentication yes$//g' "$SSHD_CONF"
-		sed -i 's/^.*PasswordAuthentication .*$/PasswordAuthentication no/g' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH password authentication."
+		sed -i 's/^.*PasswordAuthentication .*$/PasswordAuthentication no/g' "$SSHD_CONF" 
+		echo -e "${GREEN}[+]${RESET}Prohibiting SSH password authentication."
 	fi
 
 	if ! (grep -q -x 'PermitRootLogin no' "$SSHD_CONF"); then
-		sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin no/' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH root login."
+		sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin no/' "$SSHD_CONF" 
+		echo -e "${GREEN}[+]${RESET}Prohibiting SSH root login."
 	fi
 
 	if ! (grep -q -x 'Protocol 2' "$SSHD_CONF"); then
-		sed -i 's/^.*Port .*$/&\nProtocol 2/' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
+		sed -i 's/^.*Port .*$/&\nProtocol 2/' "$SSHD_CONF" 
+		echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
 	fi
 
 	echo -e "${BLUE}[i]${RESET}What port do you want SSH to listen to?"
