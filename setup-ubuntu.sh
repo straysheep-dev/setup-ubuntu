@@ -259,6 +259,24 @@ function setIpv6() {
 	fi
 }
 
+function checkNetworking() {
+	# Applies to VM, HW, VPS
+	# https://www.blackhillsinfosec.com/how-to-disable-llmnr-why-you-want-to/
+	if (grep -Eqx "^#LLMNR=no$" /etc/systemd/resolved.conf); then 
+		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
+	else
+		sed -i 's/^.*LLMNR=.*$/#LLMNR=no/' /etc/systemd/resolved.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
+	fi
+
+	if (grep -Eqx "^#MulticastDNS=no$" /etc/systemd/resolved.conf); then
+		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
+	else
+		sed -i 's/^.*MulticastDNS=.*$/#MulticastDNS=no/' /etc/systemd/resolved.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
+	fi
+}
+
 function setFirewall() {
 	# Applies to VM, HW, VPS
 	echo "======================================================================"
@@ -930,6 +948,7 @@ function installVM() {
 	#updateServices
 	#addVBox
 	setIpv6
+	checkNetworking
 	setFirewall
 	checkPackages
 	setResolver
@@ -957,6 +976,7 @@ function installHW() {
 	#updateServices
 	addVBox
 	setIpv6
+	checkNetworking
 	setFirewall
 	checkPackages
 	setResolver
@@ -984,6 +1004,7 @@ function installVPS() {
 	updateServices
 	#addVBox
 	setIpv6
+	checkNetworking
 	setFirewall
 	checkPackages
 	setResolver
