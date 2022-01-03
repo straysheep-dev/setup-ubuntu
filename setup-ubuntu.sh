@@ -99,6 +99,25 @@ function checkOS() {
 }
 checkOS
 
+function MakeTemp() {
+
+    # Make a temporary working directory
+#    if [ -d /tmp/setup/ ]; then
+#        rm -rf /tmp/setup
+#    fi
+
+    if ! [ -d /tmp/setup ]; then
+        mkdir /tmp/setup
+    fi
+
+    SETUPDIR=/tmp/setup
+    export SETUPDIR
+
+    cd "$SETUPDIR" || (echo "Failed changing into setup directory. Quitting." && exit 1)
+    echo -e "${BLUE}[i]Changing working directory to $SETUPDIR${RESET}"
+
+}
+
 function checkKernel() {
 	# Applies to VM, HW, VPS
 	echo -e "${BLUE}[i]${RESET}Checking kernel parameters..."
@@ -265,7 +284,7 @@ function checkSudoers() {
 function removeBrowser() {
 	# Applies to HW
 	echo "======================================================================"
-	if (command -v firefox); then
+	if (command -v firefox > /dev/null); then
 		for package in /usr/share/doc/firefox*;
 			do apt-get autoremove --purge -y "${package:15:30}"; 
 		done
@@ -472,7 +491,7 @@ function checkPackages() {
 	# xccdf_org.ssgproject.content_rule_package_nis_removed
 	# xccdf_org.ssgproject.content_rule_package_ntpdate_removed
 
-	echo "[-]Removing any deprecated packages and protocols..."
+	echo -e "${BLUE}[-]${RESET}Removing any deprecated packages and protocols..."
 	apt-get autoremove --purge -y inetutils-telnetd telnetd-ssl telnetd nis ntpdate
 
 	sleep 2
@@ -485,10 +504,10 @@ function checkPackages() {
 	echo -e "${BLUE}[i]${RESET}Autoremoving old packages."
 	apt-get clean
 	apt-get autoremove --purge -y
-	sleep 5
+	sleep 2
 
 
-	if (command -v snap); then
+	if (command -v snap > /dev/null); then
 		echo -e "${BLUE}[i]${RESET}Checking for snap packages..."
 		snap refresh
 	fi
@@ -499,7 +518,7 @@ function checkPackages() {
 
 function setResolver() {
 	# Applies to VM, HW, VPS
-	if ! (command -v unbound); then
+	if ! (command -v unbound > /dev/null); then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}Install Unbound?"
 		echo ""
@@ -541,6 +560,62 @@ function setResolver() {
 	fi
 }
 
+function installPdfTools() {
+	# pdftools
+
+	if ! [ -e /opt/pdfid ]; then
+		echo "======================================================================"
+		echo -e "${BLUE}[i]${RESET}Install pdftools?"
+		echo ""
+		until [[ $PDFTOOLS_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " PDFTOOLS_CHOICE
+		done
+
+		if [[ "$PDFTOOLS_CHOICE" == "y" ]]; then
+	
+			echo -e "${BLUE}[i]Downloading pdftools...${RESET}"
+
+			MakeTemp
+
+			cd "$SETUPDIR" || exit
+			# Commit cc64a213aa40162f8072b95ab80bdbf67c1afaf5
+			curl -LfO https://gitlab.com/kalilinux/packages/pdfid/-/archive/cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip
+
+			if ! (sha256sum "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip | grep -x "bb3898900e31a427bcd67629e7fc7acfe1a2e3fd0400bd1923e8b86eda5cb118  $SETUPDIR/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip"); then
+				echo -e "${RED}[i]${RESET}Bad checksum. Quitting."
+				exit 1
+			else
+				echo -e "${GREEN}[i]${RESET}OK"
+			fi
+
+			unzip "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid.ini \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_embeddedfile.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_list \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_nameobfuscation.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_triage.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/debian/copyright
+
+			mv "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5 /opt/pdfid
+			chmod 754 /opt/pdfid/pdfid.py
+			ln -s /opt/pdfid/pdfid.py /usr/local/bin/pdfid
+
+			rm "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip
+
+			# Change pdfid.py to python3
+			sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' /opt/pdfid/pdfid.py
+			
+			ls -l /opt/pdfid
+			sleep 1
+			ls -l /usr/local/bin
+			echo -e "${BLUE}[i]${RESET}pdftools installed."
+			sleep 1
+		fi
+	fi
+
+}
+
 function installPackages() {
 	# Applies to VM, HW, VPS
 	
@@ -558,6 +633,9 @@ function installPackages() {
 		snap install chromium
 		snap install libreoffice
 		snap install vlc
+		
+		# Add third party package functions from above below here
+		installPdfTools
 	fi
 	echo -e "${BLUE}[+]${RESET}All essential packages installed.${RESET}"
 	sleep 1
@@ -998,6 +1076,11 @@ no-symkey-cache
 use-agent
 throw-keyids" >"$HOME_DIR"/.gnupg/gpg.conf
 
+			# Adjustment for 18.04
+			if [[ $MAJOR_UBUNTU_VERSION -eq 18 ]]; then
+				sed -i 's/^no-symkey-cache$//' "$HOME_DIR"/.gnupg/gpg.conf
+			fi
+
 			echo "enable-ssh-support
 default-cache-ttl 60
 max-cache-ttl 120
@@ -1010,7 +1093,9 @@ export GPG_TTY="$(tty)"
 export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
 gpgconf --launch gpg-agent' >>"$HOME_DIR"/.bashrc
 			fi
+
 			chown -R "$UID1000":"$UID1000" "$HOME_DIR"/.gnupg/gpg*
+
 		fi
 	fi
 }
@@ -1044,6 +1129,13 @@ function checkAppArmor() {
 	fi
 
 	echo -e "${BLUE}[i]${RESET}Done."
+}
+
+function CleanUp() {
+	# CleanUp
+	if [ -e "$SETUPDIR" ]; then
+		rm -rf "$SETUPDIR"
+	fi
 }
 
 # Command-Line-Arguments
@@ -1104,6 +1196,7 @@ function installVM() {
 	setLockdown
 	setGnupg
 	checkAppArmor
+	CleanUp
 }
 
 function installHW() {
@@ -1133,6 +1226,7 @@ function installHW() {
 	setLockdown
 	setGnupg
 	#checkAppArmor
+	#CleanUp
 }
 
 function installVPS() {
@@ -1162,6 +1256,7 @@ function installVPS() {
 	setLockdown
 	#setGnupg
 	#checkAppArmor
+	#CleanUp
 }
 
 manageMenu
