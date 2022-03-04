@@ -99,9 +99,165 @@ function checkOS() {
 }
 checkOS
 
+function MakeTemp() {
+
+    # Make a temporary working directory
+#    if [ -d /tmp/setup/ ]; then
+#        rm -rf /tmp/setup
+#    fi
+
+    if ! [ -d /tmp/setup ]; then
+        mkdir /tmp/setup
+    fi
+
+    SETUPDIR=/tmp/setup
+    export SETUPDIR
+
+    cd "$SETUPDIR" || (echo "Failed changing into setup directory. Quitting." && exit 1)
+    echo -e "${BLUE}[i]Changing working directory to $SETUPDIR${RESET}"
+
+}
+
+function checkKernel() {
+	# Applies to VM, HW, VPS
+	echo -e "${BLUE}[i]${RESET}Checking kernel parameters..."
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-standard.html
+
+	# /etc/sysctl.d/README.sysctl
+	# After making any changes, please run "service procps reload" (or, from
+	# a Debian package maintainer script "deb-systemd-invoke restart procps.service").
+
+	# xccdf_org.ssgproject.content_rule_sysctl_fs_protected_hardlinks
+	if (sysctl -a | grep -qxE "^fs\.protected_hardlinks = 1$"); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> fs.protected_hardlinks = 1"
+	else
+		sysctl -q -n -w fs.protected_hardlinks="1"
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> fs.protected_hardlinks = 1"
+		echo 'fs.protected_hardlinks = 1' > /etc/sysctl.d/10-local-ssg.conf
+	fi
+
+	# xccdf_org.ssgproject.content_rule_sysctl_fs_protected_symlinks
+	if (sysctl -a | grep -qxE "^fs\.protected_symlinks = 1$"); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> fs.protected_symlinks = 1"
+	else
+		sysctl -q -n -w fs.protected_symlinks="1"
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> fs.protected_symlinks = 1"
+		echo 'fs.protected_symlinks = 1' >> /etc/sysctl.d/10-local-ssg.conf
+	fi
+
+	# xccdf_org.ssgproject.content_rule_sysctl_fs_suid_dumpable
+	if (sysctl -a | grep -qxE "^fs\.suid_dumpable = 0$"); then 
+		echo -e "${BLUE}[OK]${RESET}kernel -> fs.suid_dumpable = 0"
+	else
+		sysctl -q -n -w fs.suid_dumpable="0"
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> fs.suid_dumpable = 0"
+		echo 'fs.suid_dumpable = 0' >> /etc/sysctl.d/10-local-ssg.conf
+	fi
+
+	# xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space
+	if (sysctl -a | grep -qxE "^kernel\.randomize_va_space = 2$"); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> kernel.randomize_va_space = 2"
+	else
+		sysctl -q -n -w kernel.randomize_va_space="2"
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> kernel.randomize_va_space = 2"
+		echo 'kernel.randomize_va_space = 2' >> /etc/sysctl.d/10-local-ssg.conf
+	fi
+
+	# xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_tcp_syncookies
+	if (sysctl -a | grep -qxE "^net\.ipv4\.tcp_syncookies = 1$"); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> net.ipv4.tcp_syncookies = 1"
+	else
+		sysctl -w net.ipv4.tcp_syncookies="1"
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> net.ipv4.tcp_syncookies = 1"
+		echo 'net.ipv4.tcp_syncookies = 1' >> /etc/sysctl.d/10-local-ssg.conf
+	fi
+
+	# magic-sysrq-key
+	if (sysctl -a | grep -qxE "^kernel\.sysrq = 0$"); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> kernel.sysrq (Ctrl+Alt+Del) = 0"
+	else
+		sysctl -q -n -w kernel.sysrq="0"
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> kernel.sysrq (Ctrl+Alt+Del) = 0"
+		if [ -e /etc/sysctl.d/10-magic-sysrq.conf ]; then
+			sed -i 's/^kernel.sysrq = .*$/kernel.sysrq = 0/' /etc/sysctl.d/10-magic-sysrq.conf
+		else
+			echo 'kernel.sysrq = 0' >> /etc/sysctl.d/10-local-ssg.conf
+		fi
+	fi
+
+	# https://github.com/nongiach/sudo_inject
+	# https://github.com/carlospolop/hacktricks/tree/master/linux-unix/privilege-escalation#reusing-sudo-tokens
+	# cat /proc/sys/kernel/yama/ptrace_scope
+	if (sysctl -a | grep -qxE "^kernel\.yama\.ptrace_scope = [^0]$"); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> kernel.ptrace_scope != 0"
+	else
+		sysctl -q -n -w kernel.yama.ptrace_scope="1"
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> kernel.yama.ptrace_scope = 1"
+		echo 'kernel.yama.ptrace_scope = 1' >> /etc/sysctl.d/10-local-ssg.conf
+	fi
 
 
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_coredump_disable_backtraces
+	# xccdf_org.ssgproject.content_rule_coredump_disable_storage
+	if ! [ -e /etc/systemd/coredump.conf ]; then
+		touch "/etc/systemd/coredump.conf"
+	fi
 
+	if (grep -Eqx "^ProcessSizeMax=0$" /etc/systemd/coredump.conf); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> backtraces disabled -> ProcessSizeMax=0"
+	else
+		echo "ProcessSizeMax=0" >> /etc/systemd/coredump.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> backtraces disabled -> ProcessSizeMax=0"
+	fi
+
+	if (grep -Eqx "^Storage=none$" /etc/systemd/coredump.conf); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> coredumps disabled -> Storage=none"
+	else
+		echo "Storage=none" >> /etc/systemd/coredump.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> coredumps disabled -> Storage=none"
+	fi
+
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_kernel_module_rds_disabled
+	if (grep -Eqx "^install rds /bin/true$" /etc/modprobe.d/rds.conf); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> 'install rds /bin/true' -> /etc/modprobe.d/rds.conf"
+	else
+		echo 'install rds /bin/true' > /etc/modprobe.d/rds.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> 'install rds /bin/true' -> /etc/modprobe.d/rds.conf"
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_kernel_module_tipc_disabled
+	if (grep -Eqx "^install tipc /bin/true$" /etc/modprobe.d/tipc.conf); then 
+		echo -e "${BLUE}[OK]${RESET}kernel -> 'install tipc /bin/true' -> /etc/modprobe.d/tipc.conf"
+	else
+		echo 'install tipc /bin/true' > /etc/modprobe.d/tipc.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> 'install tipc /bin/true' -> /etc/modprobe.d/tipc.conf"
+	fi
+
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_grub2_enable_iommu_force
+	if (grep -Eqx "^.*iommu=force.*$" /etc/default/grub); then
+		echo -e "${BLUE}[OK]${RESET}kernel -> iommu=force -> /etc/grub/default"
+	elif grep -q '^GRUB_CMDLINE_LINUX=.*iommu=.*"'  '/etc/default/grub' ; then
+		# modify the GRUB command-line if an iommu= arg already exists
+		sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)iommu=[^[:space:]]*\(.*"\)/\1 iommu=force \2/'  '/etc/default/grub'
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> iommu=force -> /etc/grub/default"
+	elif ! (grep -q '^GRUB_CMDLINE_LINUX=.*iommu=.*"'  '/etc/default/grub'); then
+		# no iommu=arg is present, append it
+		sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)"/\1 iommu=force"/'  '/etc/default/grub'
+		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> iommu=force -> /etc/grub/default"
+	fi
+
+	# Add other kernel parameter changes here
+
+	update-grub
+
+}
 
 function setPerms() {
 	# Applies to VM, HW, VPS
@@ -128,7 +284,7 @@ function checkSudoers() {
 function removeBrowser() {
 	# Applies to HW
 	echo "======================================================================"
-	if (command -v firefox); then
+	if (command -v firefox > /dev/null); then
 		for package in /usr/share/doc/firefox*;
 			do apt-get autoremove --purge -y "${package:15:30}"; 
 		done
@@ -259,6 +415,27 @@ function setIpv6() {
 	fi
 }
 
+function checkNetworking() {
+	# Applies to VM, HW, VPS
+	# https://www.blackhillsinfosec.com/how-to-disable-llmnr-why-you-want-to/
+	echo "======================================================================"
+	echo -e "${BLUE}[i]${RESET}Checking networking settings..."
+	echo ""
+	if (grep -Eqx "^#LLMNR=no$" /etc/systemd/resolved.conf); then 
+		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
+	else
+		sed -i 's/^.*LLMNR=.*$/#LLMNR=no/' /etc/systemd/resolved.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
+	fi
+
+	if (grep -Eqx "^#MulticastDNS=no$" /etc/systemd/resolved.conf); then
+		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
+	else
+		sed -i 's/^.*MulticastDNS=.*$/#MulticastDNS=no/' /etc/systemd/resolved.conf
+		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
+	fi
+}
+
 function setFirewall() {
 	# Applies to VM, HW, VPS
 	echo "======================================================================"
@@ -314,7 +491,7 @@ function checkPackages() {
 	# xccdf_org.ssgproject.content_rule_package_nis_removed
 	# xccdf_org.ssgproject.content_rule_package_ntpdate_removed
 
-	echo "[-]Removing any deprecated packages and protocols..."
+	echo -e "${BLUE}[-]${RESET}Removing any deprecated packages and protocols..."
 	apt-get autoremove --purge -y inetutils-telnetd telnetd-ssl telnetd nis ntpdate
 
 	sleep 2
@@ -327,10 +504,10 @@ function checkPackages() {
 	echo -e "${BLUE}[i]${RESET}Autoremoving old packages."
 	apt-get clean
 	apt-get autoremove --purge -y
-	sleep 5
+	sleep 2
 
 
-	if (command -v snap); then
+	if (command -v snap > /dev/null); then
 		echo -e "${BLUE}[i]${RESET}Checking for snap packages..."
 		snap refresh
 	fi
@@ -341,7 +518,7 @@ function checkPackages() {
 
 function setResolver() {
 	# Applies to VM, HW, VPS
-	if ! (command -v unbound); then
+	if ! (command -v unbound > /dev/null); then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}Install Unbound?"
 		echo ""
@@ -383,6 +560,62 @@ function setResolver() {
 	fi
 }
 
+function installPdfTools() {
+	# pdftools
+
+	if ! [ -e /opt/pdfid ]; then
+		echo "======================================================================"
+		echo -e "${BLUE}[i]${RESET}Install pdftools?"
+		echo ""
+		until [[ $PDFTOOLS_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " PDFTOOLS_CHOICE
+		done
+
+		if [[ "$PDFTOOLS_CHOICE" == "y" ]]; then
+	
+			echo -e "${BLUE}[i]Downloading pdftools...${RESET}"
+
+			MakeTemp
+
+			cd "$SETUPDIR" || exit
+			# Commit cc64a213aa40162f8072b95ab80bdbf67c1afaf5
+			curl -LfO https://gitlab.com/kalilinux/packages/pdfid/-/archive/cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip
+
+			if ! (sha256sum "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip | grep -x "bb3898900e31a427bcd67629e7fc7acfe1a2e3fd0400bd1923e8b86eda5cb118  $SETUPDIR/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip"); then
+				echo -e "${RED}[i]${RESET}Bad checksum. Quitting."
+				exit 1
+			else
+				echo -e "${GREEN}[i]${RESET}OK"
+			fi
+
+			unzip "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid.ini \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_embeddedfile.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_list \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_nameobfuscation.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_triage.py \
+			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/debian/copyright
+
+			mv "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5 /opt/pdfid
+			chmod 754 /opt/pdfid/pdfid.py
+			ln -s /opt/pdfid/pdfid.py /usr/local/bin/pdfid
+
+			rm "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip
+
+			# Change pdfid.py to python3
+			sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' /opt/pdfid/pdfid.py
+			
+			ls -l /opt/pdfid
+			sleep 1
+			ls -l /usr/local/bin
+			echo -e "${BLUE}[i]${RESET}pdftools installed."
+			sleep 1
+		fi
+	fi
+
+}
+
 function installPackages() {
 	# Applies to VM, HW, VPS
 	
@@ -400,6 +633,9 @@ function installPackages() {
 		snap install chromium
 		snap install libreoffice
 		snap install vlc
+		
+		# Add third party package functions from above below here
+		installPdfTools
 	fi
 	echo -e "${BLUE}[+]${RESET}All essential packages installed.${RESET}"
 	sleep 1
@@ -481,17 +717,43 @@ function setRkhunter() {
 	chmod -x '/etc/cron.daily/rkhunter'
 
 	if [ -e "$RKHUNTER_CONF" ]; then
-		grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "$RKHUNTER_CONF" || (sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating rkhunter test list.")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)")
-		grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)")
-		if [ "$VPS" = 'false' ]; then
-			grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF" || (sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)")
+		if ! (grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "$RKHUNTER_CONF"); then
+			sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "$RKHUNTER_CONF" 
+			echo -e "${BLUE}[*]${RESET}Updating rkhunter test list."
 		fi
-		grep -q -x "ALLOW_SSH_PROT_V1=0" "$RKHUNTER_CONF" || (sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Adding warning for detection of SSHv1 protocol.")
-		grep -q -x '#WEB_CMD="/bin/false"' "$RKHUNTER_CONF" || (sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "$RKHUNTER_CONF" && echo -e "${BLUE}[*]${RESET}Commenting out WEB_CMD="'"\/bin\/false"')
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)"
+		fi
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)"
+		fi
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)"
+		fi
+		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)"
+		fi
+		if [ "$VPS" = 'false' ]; then
+			if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF"); then
+			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)"
+			fi
+		fi
+		if ! (grep -q -x "ALLOW_SSH_PROT_V1=0" "$RKHUNTER_CONF"); then
+			sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Adding warning for detection of SSHv1 protocol."
+		fi
+		if ! (grep -q -x '#WEB_CMD="/bin/false"' "$RKHUNTER_CONF"); then
+			sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "$RKHUNTER_CONF"
+			echo -e "${BLUE}[*]${RESET}Commenting out WEB_CMD="'"\/bin\/false"'
+		fi
+
 		rkhunter -C && echo -e "${GREEN}[+]${RESET}Reloading rkhunter profile."
+
 	elif ! [ -e "$RKHUNTER_CONF" ]; then
 		echo -e "${RED}"'[!]'"${RESET}rkhunter.conf file not found. Skipping."
 	fi
@@ -500,18 +762,92 @@ function setRkhunter() {
 function setSSH() {
 	# Applies to VPS
 	echo "======================================================================"
-	if ! (grep -q -x 'PasswordAuthentication no' "$SSHD_CONF"); then
-		# Removes example entry at the bottom of sshd_config
+	if ! [ -e /etc/ssh/sshd_config.bkup ]; then
+		cp /etc/ssh/sshd_config -t /etc/ssh/sshd_config.bkup
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_group_ssh_server
+
+	# Replace example entries or add the setting if missing
+
+	if ! (grep -Eq "^PasswordAuthentication no$" "$SSHD_CONF"); then
 		sed -i 's/^PasswordAuthentication yes$//g' "$SSHD_CONF"
-		sed -i 's/^.*PasswordAuthentication .*$/PasswordAuthentication no/g' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH password authentication."
+		sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication no/g' "$SSHD_CONF" || \
+		echo "PasswordAuthentication no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PasswordAuthentication no"
 	fi
 
-	if ! (grep -q -x 'PermitRootLogin no' "$SSHD_CONF"); then
-		sed -i 's/^#PermitRootLogin prohibit-password$/PermitRootLogin no/' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSH root login."
+	if ! (grep -Eq 'PermitRootLogin no' "$SSHD_CONF"); then
+		sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin no/' "$SSHD_CONF" || \
+		echo "PermitRootLogin no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PermitRootLogin no"
 	fi
 
-	if ! (grep -q -x 'Protocol 2' "$SSHD_CONF"); then
-		sed -i 's/^.*Port .*$/&\nProtocol 2/' "$SSHD_CONF" && echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
+	if ! (grep -Eq "^Protocol 2$" "$SSHD_CONF"); then
+		sed -i 's/^.*Protocol.*$/&\nProtocol 2/' "$SSHD_CONF" || \
+		echo "Protocol 2" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
+	fi
+
+	if ! ( grep -Eq "^PermitEmptyPasswords no$" "$SSHD_CONF"); then
+		sed -i 's/^.*PermitEmptyPasswords.*$/PermitEmptyPasswords no/' "$SSHD_CONF" || \
+		echo "PermitEmptyPasswords no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PermitEmptyPasswords no"
+	fi
+
+	# 600=10 minutes
+	if ! ( grep -Eq "^ClientAliveInterval 300$" "$SSHD_CONF"); then
+		sed -i 's/^.*ClientAliveInterval.*$/ClientAliveInterval 300/' "$SSHD_CONF" || \
+		echo "ClientAliveInterval 300" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: ClientAliveInterval 300"
+	fi
+
+	# set 0 for ClientAliveInterval to be exact
+	if ! ( grep -Eq "^ClientAliveCountMax 0$" "$SSHD_CONF"); then
+		sed -i 's/^.*ClientAliveCountMax.*$/ClientAliveCountMax 0/' "$SSHD_CONF" || \
+		echo "ClientAliveCountMax 0" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
+	fi
+
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_disable_host_auth
+	if ! ( grep -Eq "^HostbasedAuthentication no$" "$SSHD_CONF"); then
+		sed -i 's/^.*HostbasedAuthentication.*$/HostbasedAuthentication no/' "$SSHD_CONF" || \
+		echo "HostbasedAuthentication no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: HostbasedAuthentication no"
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_disable_rhosts
+	if ! ( grep -Eq "^IgnoreRhosts yes$" "$SSHD_CONF"); then
+		sed -i 's/^.*IgnoreRhosts.*$/IgnoreRhosts yes/' "$SSHD_CONF" || \
+		echo "IgnoreRhosts yes" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: IgnoreRhosts yes"
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_do_not_permit_user_env
+	if ! ( grep -Eq "^PermitUserEnvironment no$" "$SSHD_CONF"); then
+		sed -i 's/^.*PermitUserEnvironment.*$/PermitUserEnvironment no/' "$SSHD_CONF" || \
+		echo "PermitUserEnvironment no" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: PermitUserEnvironment no"
+	fi
+
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_set_loglevel_info
+	if ! ( grep -Eq "^LogLevel INFO$" "$SSHD_CONF"); then
+		sed -i 's/^.*LogLevel INFO.*$/LogLevel INFO/' "$SSHD_CONF" || \
+		echo "LogLevel INFO" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: LogLevel INFO"
+	fi
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+	# xccdf_org.ssgproject.content_rule_sshd_set_max_auth_tries
+	if ! ( grep -Eq "^MaxAuthTries 4$" "$SSHD_CONF"); then
+		sed -i 's/^.*MaxAuthTries.*$/MaxAuthTries 4/' "$SSHD_CONF" || \
+		echo "MaxAuthTries 4" >> "$SSHD_CONF"
+		echo -e "${GREEN}[+]${RESET}Setting: MaxAuthTries 4"
 	fi
 
 	echo -e "${BLUE}[i]${RESET}What port do you want SSH to listen to?"
@@ -740,6 +1076,11 @@ no-symkey-cache
 use-agent
 throw-keyids" >"$HOME_DIR"/.gnupg/gpg.conf
 
+			# Adjustment for 18.04
+			if [[ $MAJOR_UBUNTU_VERSION -eq 18 ]]; then
+				sed -i 's/^no-symkey-cache$//' "$HOME_DIR"/.gnupg/gpg.conf
+			fi
+
 			echo "enable-ssh-support
 default-cache-ttl 60
 max-cache-ttl 120
@@ -752,7 +1093,9 @@ export GPG_TTY="$(tty)"
 export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
 gpgconf --launch gpg-agent' >>"$HOME_DIR"/.bashrc
 			fi
+
 			chown -R "$UID1000":"$UID1000" "$HOME_DIR"/.gnupg/gpg*
+
 		fi
 	fi
 }
@@ -764,7 +1107,7 @@ function checkAppArmor() {
 
 	echo -e "${BLUE}[i]${RESET}Checking AppArmor profiles."
 
-	if (command -v firefox); then
+	if (command -v firefox | grep -Eq "^/usr/bin/firefox$"); then
 		if [ -e "/etc/apparmor.d/disable/usr.bin.firefox" ]; then
 		    rm /etc/apparmor.d/disable/usr.bin.firefox
 		fi
@@ -786,6 +1129,13 @@ function checkAppArmor() {
 	fi
 
 	echo -e "${BLUE}[i]${RESET}Done."
+}
+
+function CleanUp() {
+	# CleanUp
+	if [ -e "$SETUPDIR" ]; then
+		rm -rf "$SETUPDIR"
+	fi
 }
 
 # Command-Line-Arguments
@@ -823,6 +1173,7 @@ function installVM() {
 	echo ""
 	VM='true'
 	# Functions
+	checkKernel
 	setPerms
 	checkSudoers
 	#removeBrowser
@@ -830,6 +1181,7 @@ function installVM() {
 	#updateServices
 	#addVBox
 	setIpv6
+	checkNetworking
 	setFirewall
 	checkPackages
 	setResolver
@@ -844,12 +1196,14 @@ function installVM() {
 	setLockdown
 	setGnupg
 	checkAppArmor
+	CleanUp
 }
 
 function installHW() {
 	echo ""
 	HW='true'
 	# Functions
+	checkKernel
 	setPerms
 	checkSudoers
 	removeBrowser
@@ -857,6 +1211,7 @@ function installHW() {
 	#updateServices
 	addVBox
 	setIpv6
+	checkNetworking
 	setFirewall
 	checkPackages
 	setResolver
@@ -871,12 +1226,14 @@ function installHW() {
 	setLockdown
 	setGnupg
 	#checkAppArmor
+	#CleanUp
 }
 
 function installVPS() {
 	echo ""
 	VPS='true'
 	# Functions
+	checkKernel
 	setPerms
 	checkSudoers
 	#removeBrowser
@@ -884,6 +1241,7 @@ function installVPS() {
 	updateServices
 	#addVBox
 	setIpv6
+	checkNetworking
 	setFirewall
 	checkPackages
 	setResolver
@@ -898,6 +1256,7 @@ function installVPS() {
 	setLockdown
 	#setGnupg
 	#checkAppArmor
+	#CleanUp
 }
 
 manageMenu
