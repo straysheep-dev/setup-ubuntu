@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# This is a post install script for an Ubuntu 18.04+ workstation, vm, or server.
+# This is a post install script for an Ubuntu 18.04 or later workstation, vm, or server.
 # The goal is to provide a minimal and hardened baseline environment with auditing capability
 
 # Thanks to the following projects for code and inspiration:
@@ -20,22 +20,7 @@ BOLD="\033[01;01m"     # Highlight
 RESET="\033[00m"       # Normal
 
 UID1000="$(grep 1000 /etc/passwd | cut -d: -f1)"
-AA_FIREFOX=/etc/apparmor.d/usr.bin.firefox
-AA_FIREFOX_LOCAL=/etc/apparmor.d/local/usr.bin.firefox
-ADDUSER_CONF=/etc/adduser.conf
-AIDE_MACROS=/etc/aide/aide.conf.d
 HOME_DIR=/home/"$UID1000"
-VBOX_APT_LIST=/etc/apt/sources.list.d/virtualbox.list
-RKHUNTER_CONF=/etc/rkhunter.conf
-SSHD_CONF=/etc/ssh/sshd_config
-
-#AUDIT_DOCS=/usr/share/doc/auditd/examples/rules
-#AUDIT_CONF=/etc/audit/auditd.conf
-#AUDIT_RULES_D=/etc/audit/rules.d
-#NUM_LOGS=0
-#LOG_SIZE=0
-#LOG_FORMAT=0
-#LOCKDOWN_MODE=0
 
 #PUB_IPV4=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 #PUB_IPV6=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
@@ -77,16 +62,35 @@ function checkHostname() {
 checkHostname
 
 function checkOS() {
+
+	# Check desktop type
+	# Needs revised
+#	echo -e "${BLUE}[i]$XDG_CURRENT_DESKTOP desktop environment detected${RESET}"
+
 	# Check OS version
 	OS="$(grep -E "^ID=" /etc/os-release | cut -d '=' -f 2)"
-	CODENAME="$(grep VERSION_CODENAME /etc/os-release | cut -d '=' -f 2)" # debian or ubuntu
-	echo -e "${BLUE}[i]${RESET}$OS $CODENAME detected."
+
 	if [[ $OS == "ubuntu" ]]; then
+		CODENAME="$(grep VERSION_CODENAME /etc/os-release | cut -d '=' -f 2)" # debian or ubuntu
+		echo -e "${BLUE}[i]$OS $CODENAME detected.${RESET}"
 		MAJOR_UBUNTU_VERSION=$(grep VERSION_ID /etc/os-release | cut -d '"' -f2 | cut -d '.' -f 1)
 		if [[ $MAJOR_UBUNTU_VERSION -lt 18 ]]; then
 			echo "⚠️ Your version of Ubuntu is not supported."
 			echo ""
 			echo "However, if you're using Ubuntu >= 16.04 or beta, then you can continue, at your own risk."
+			echo ""
+			until [[ $CONTINUE =~ ^(y|n)$ ]]; do
+				read -rp "Continue? [y/n]: " -e CONTINUE
+			done
+			if [[ $CONTINUE == "n" ]]; then
+				exit 1
+			fi
+		fi
+	elif [[ $OS == "fedora" ]]; then
+		MAJOR_FEDORA_VERSION="$(grep VERSION_ID /etc/os-release | cut -d '=' -f2)"
+		echo -e "${BLUE}[i]${RESET}$OS $MAJOR_FEDORA_VERSION detected."
+		if [[ $MAJOR_FEDORA_VERSION -lt 34 ]]; then
+			echo "⚠️ Your version of Fedora may not be supported."
 			echo ""
 			until [[ $CONTINUE =~ ^(y|n)$ ]]; do
 				read -rp "Continue? [y/n]: " -e CONTINUE
@@ -261,6 +265,9 @@ function checkKernel() {
 
 function setPerms() {
 	# Applies to VM, HW, VPS
+
+	ADDUSER_CONF=/etc/adduser.conf
+
 	echo "======================================================================"
 	if ! (grep -qx 'DIR_MODE=0750' "$ADDUSER_CONF"); then
 		sed -i 's/DIR_MODE=0755/DIR_MODE=0750/' "$ADDUSER_CONF"
@@ -282,13 +289,15 @@ function checkSudoers() {
 }
 
 function removeBrowser() {
-	# Applies to HW
+	# Applies to HW, VM
+	# Replace with either Chromium or Firefox snap packages
 	echo "======================================================================"
-	if (command -v firefox > /dev/null); then
-		for package in /usr/share/doc/firefox*;
-			do apt-get autoremove --purge -y "${package:15:30}"; 
+	if ! (snap list | grep firefox > /dev/null); then
+		for package in $(dpkg --list | grep firefox | cut -d ' ' -f 3); do 
+			apt autoremove --purge -y "$package"
 		done
-		rm -rf /usr/lib/firefox*
+		rm -rf /usr/lib/firefox* > /dev/null
+		rm -rf /usr/lib64/firefox* > /dev/null
 	else
 		echo -e "${BLUE}[i]${RESET}Default browser already removed. Skipping."
 	fi
@@ -358,6 +367,9 @@ function updateServices() {
 
 function addVBox() {
 	# Applies to HW
+
+	VBOX_APT_LIST=/etc/apt/sources.list.d/virtualbox.list
+
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Add Oracle's VirtualBox apt repository and key to keyring?"
 	echo ""
@@ -368,13 +380,17 @@ function addVBox() {
 	if [[ $VBOX_CHOICE == "y" ]]; then
 		if ! [ -e ./oracle_vbox_2016.asc ]; then
 			echo -e "${GREEN}[+]${RESET}Retrieving VirtualBox apt-key with Wget.${RESET}"
-			(wget -O oracle_vbox_2016.asc 'https://www.virtualbox.org/download/oracle_vbox_2016.asc') || (echo -e "${RED}"'[!]'"${RESET}Unable to retrieve Oracle VirtualBox signing key.${RESET}" && rm oracle_vbox_2016.asc)
+			# Use wget since curl may not be installed yet
+			if ! (wget -O oracle_vbox_2016.asc 'https://www.virtualbox.org/download/oracle_vbox_2016.asc'); then
+				echo -e "${RED}"'[!]'"${RESET}Unable to retrieve Oracle VirtualBox signing key.${RESET}"
+				rm ./oracle_vbox_2016.asc
+			fi
 		fi
 		if [ -e ./oracle_vbox_2016.asc ]; then
 			echo -e "${GREEN}[+]${RESET}Adding VirtualBox apt-key from local file.${RESET}"
 			echo -e "${GREEN}[+]${RESET}VirtualBox sources.list created at $VBOX_APT_LIST."
 			apt-key add ./oracle_vbox_2016.asc
-			echo "deb [arch=amd64] https://download.virtualbox.org/virtualbox/debian ${VERSION_CODENAME} contrib" >"$VBOX_APT_LIST"
+			echo "deb [arch=amd64] https://download.virtualbox.org/virtualbox/debian $CODENAME contrib" > "$VBOX_APT_LIST"
 		fi
 	elif [[ $VBOX_CHOICE == "n" ]] && [ -e "$VBOX_APT_LIST" ]; then
 		echo "======================================================================"
@@ -421,17 +437,17 @@ function checkNetworking() {
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Checking networking settings..."
 	echo ""
-	if (grep -Eqx "^#LLMNR=no$" /etc/systemd/resolved.conf); then 
+	if (grep -Eqx "^LLMNR=no$" /etc/systemd/resolved.conf); then 
 		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
 	else
-		sed -i 's/^.*LLMNR=.*$/#LLMNR=no/' /etc/systemd/resolved.conf
+		sed -i 's/^.*LLMNR=.*$/LLMNR=no/' /etc/systemd/resolved.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
 	fi
 
-	if (grep -Eqx "^#MulticastDNS=no$" /etc/systemd/resolved.conf); then
+	if (grep -Eqx "^MulticastDNS=no$" /etc/systemd/resolved.conf); then
 		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
 	else
-		sed -i 's/^.*MulticastDNS=.*$/#MulticastDNS=no/' /etc/systemd/resolved.conf
+		sed -i 's/^.*MulticastDNS=.*$/MulticastDNS=no/' /etc/systemd/resolved.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
 	fi
 }
@@ -484,15 +500,18 @@ function setFirewall() {
 
 function checkPackages() {
 
+	echo "======================================================================"
 	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-standard.html
 	# xccdf_org.ssgproject.content_rule_package_inetutils-telnetd_removed
 	# xccdf_org.ssgproject.content_rule_package_telnetd-ssl_removed
 	# xccdf_org.ssgproject.content_rule_package_telnetd_removed
 	# xccdf_org.ssgproject.content_rule_package_nis_removed
 	# xccdf_org.ssgproject.content_rule_package_ntpdate_removed
+	# https://static.open-scap.org/ssg-guides/ssg-ubuntu2004-guide-stig.html
+	# xccdf_org.ssgproject.content_rule_package_rsh-server_removed
 
 	echo -e "${BLUE}[-]${RESET}Removing any deprecated packages and protocols..."
-	apt-get autoremove --purge -y inetutils-telnetd telnetd-ssl telnetd nis ntpdate
+	apt-get autoremove --purge -y inetutils-telnetd telnetd-ssl telnetd nis ntpdate rsh-server
 
 	sleep 2
 
@@ -563,7 +582,16 @@ function setResolver() {
 function installPdfTools() {
 	# pdftools
 
-	if ! [ -e /opt/pdfid ]; then
+	# Update these values when newer versions are available
+	PDF_TOOLS_DIR="/opt/pdftools"
+	PDFID_HASH="bb3898900e31a427bcd67629e7fc7acfe1a2e3fd0400bd1923e8b86eda5cb118"
+	PDFID_GIT="cc64a213aa40162f8072b95ab80bdbf67c1afaf5"
+	PDFID_DIR="/opt/pdftools/pdfid"
+	PDFPARSER_HASH="ca0145cd48e4b9b3e8d10aefe2805ac66b500eac51597044bb432507fc68a0b7"
+	PDFPARSER_GIT="1d7ee54ffeb50293f3721f3682685328f5cf5a08"
+	PDFPARSER_DIR="/opt/pdftools/pdf-parser"
+
+	if ! [ -e "$PDFID_DIR" -o -e "$PDFPARSER_DIR" ]; then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}Install pdftools?"
 		echo ""
@@ -572,44 +600,75 @@ function installPdfTools() {
 		done
 
 		if [[ "$PDFTOOLS_CHOICE" == "y" ]]; then
-	
+
 			echo -e "${BLUE}[i]Downloading pdftools...${RESET}"
 
-			MakeTemp
+			mkdir "$PDF_TOOLS_DIR"
 
-			cd "$SETUPDIR" || exit
+			#======================================================================
+
+			# pdfid
 			# Commit cc64a213aa40162f8072b95ab80bdbf67c1afaf5
-			curl -LfO https://gitlab.com/kalilinux/packages/pdfid/-/archive/cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip
+			curl -LfO https://gitlab.com/kalilinux/packages/pdfid/-/archive/"$PDFID_GIT"/pdfid-"$PDFID_GIT".zip
 
-			if ! (sha256sum "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip | grep -x "bb3898900e31a427bcd67629e7fc7acfe1a2e3fd0400bd1923e8b86eda5cb118  $SETUPDIR/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip"); then
-				echo -e "${RED}[i]${RESET}Bad checksum. Quitting."
+			if ! (sha256sum "$SETUPDIR/pdfid-$PDFID_GIT.zip" | grep -x "$PDFID_HASH  $SETUPDIR/pdfid-$PDFID_GIT.zip"); then
+				echo -e "${RED}[i]Bad checksum. Quitting.${RESET}"
 				exit 1
 			else
-				echo -e "${GREEN}[i]${RESET}OK"
+				echo -e "${GREEN}[i]OK${RESET}"
 			fi
 
-			unzip "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip \
-			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid.ini \
-			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/pdfid.py \
-			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_embeddedfile.py \
-			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_list \
-			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_nameobfuscation.py \
-			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/plugin_triage.py \
-			pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5/debian/copyright
+			unzip "$SETUPDIR"/pdfid-"$PDFID_GIT".zip \
+			pdfid-"$PDFID_GIT"/pdfid.ini \
+			pdfid-"$PDFID_GIT"/pdfid.py \
+			pdfid-"$PDFID_GIT"/plugin_embeddedfile.py \
+			pdfid-"$PDFID_GIT"/plugin_list \
+			pdfid-"$PDFID_GIT"/plugin_nameobfuscation.py \
+			pdfid-"$PDFID_GIT"/plugin_triage.py \
+			pdfid-"$PDFID_GIT"/debian/copyright
 
-			mv "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5 /opt/pdfid
-			chmod 754 /opt/pdfid/pdfid.py
-			ln -s /opt/pdfid/pdfid.py /usr/local/bin/pdfid
+			mv "$SETUPDIR"/pdfid-"$PDFID_GIT" "$PDFID_DIR"
+			chmod 755 "$PDFID_DIR"/pdfid.py
+			ln -s "$PDFID_DIR"/pdfid.py /usr/local/bin/pdfid
 
-			rm "$SETUPDIR"/pdfid-cc64a213aa40162f8072b95ab80bdbf67c1afaf5.zip
+			rm "$SETUPDIR"/pdfid-"$PDFID_GIT".zip
 
 			# Change pdfid.py to python3
-			sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' /opt/pdfid/pdfid.py
-			
-			ls -l /opt/pdfid
-			sleep 1
+			sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFID_DIR"/pdfid.py
+
+			#======================================================================
+
+			# pdf-parser
+			# Commit 1d7ee54ffeb50293f3721f3682685328f5cf5a08
+			curl -LfO https://gitlab.com/kalilinux/packages/pdf-parser/-/archive/"$PDFPARSER_GIT"/pdf-parser-"$PDFPARSER_GIT".zip
+
+			if ! (sha256sum "$SETUPDIR/pdf-parser-$PDFPARSER_GIT.zip" | grep -x "$PDFPARSER_HASH  $SETUPDIR/pdf-parser-$PDFPARSER_GIT.zip"); then
+				echo -e "${RED}[i]Bad checksum. Quitting.${RESET}"
+				exit 1
+			else
+				echo -e "${GREEN}[i]OK${RESET}"
+			fi
+
+			unzip "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT".zip \
+			pdf-parser-"$PDFPARSER_GIT"/pdf-parser.py \
+			pdf-parser-"$PDFPARSER_GIT"/debian/copyright \
+			pdf-parser-"$PDFPARSER_GIT"/debian/changelog
+
+			mv "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT" "$PDFPARSER_DIR"
+			chmod 755 "$PDFPARSER_DIR"/pdf-parser.py
+			ln -s "$PDFPARSER_DIR"/pdf-parser.py /usr/local/bin/pdf-parser
+
+			rm "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT".zip
+
+			# Change pdf-parser.py to python3
+			sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFPARSER_DIR"/pdf-parser.py
+
+			#======================================================================
+
+			echo ""
+			echo -e "${BLUE}[i]Listing symlinks...${RESET}"
 			ls -l /usr/local/bin
-			echo -e "${BLUE}[i]${RESET}pdftools installed."
+			echo -e "${BLUE}[i]pdftools installed.${RESET}"
 			sleep 1
 		fi
 	fi
@@ -629,8 +688,9 @@ function installPackages() {
 		if (dmesg | grep -q 'vmware'); then
 			apt install -y open-vm-tools-desktop
 		fi
-		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl nmap pcscd python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
 		snap install chromium
+		snap install firefox
 		snap install libreoffice
 		snap install vlc
 		
@@ -694,7 +754,9 @@ function setPostfix() {
 
 function setAIDE() {
 	# Applies to VPS
-	
+
+	AIDE_MACROS=/etc/aide/aide.conf.d
+
 	# Stops cron daily execution from altering database
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Checking aide's cron.daily execution (disabled, enable manually)."
@@ -710,6 +772,8 @@ function setAIDE() {
 
 function setRkhunter() {
 	# Applies to VM, HW, VPS
+
+	RKHUNTER_CONF=/etc/rkhunter.conf
 
 	# Stops cron daily execution from altering database
 	echo "======================================================================"
@@ -762,141 +826,301 @@ function setRkhunter() {
 function setSSH() {
 	# Applies to VPS
 	echo "======================================================================"
-	if ! [ -e /etc/ssh/sshd_config.bkup ]; then
-		cp /etc/ssh/sshd_config -t /etc/ssh/sshd_config.bkup
-	fi
-
-	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
-	# xccdf_org.ssgproject.content_group_ssh_server
-
-	# Replace example entries or add the setting if missing
-
-	if ! (grep -Eq "^PasswordAuthentication no$" "$SSHD_CONF"); then
-		sed -i 's/^PasswordAuthentication yes$//g' "$SSHD_CONF"
-		sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication no/g' "$SSHD_CONF" || \
-		echo "PasswordAuthentication no" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: PasswordAuthentication no"
-	fi
-
-	if ! (grep -Eq 'PermitRootLogin no' "$SSHD_CONF"); then
-		sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin no/' "$SSHD_CONF" || \
-		echo "PermitRootLogin no" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: PermitRootLogin no"
-	fi
-
-	if ! (grep -Eq "^Protocol 2$" "$SSHD_CONF"); then
-		sed -i 's/^.*Protocol.*$/&\nProtocol 2/' "$SSHD_CONF" || \
-		echo "Protocol 2" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
-	fi
-
-	if ! ( grep -Eq "^PermitEmptyPasswords no$" "$SSHD_CONF"); then
-		sed -i 's/^.*PermitEmptyPasswords.*$/PermitEmptyPasswords no/' "$SSHD_CONF" || \
-		echo "PermitEmptyPasswords no" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: PermitEmptyPasswords no"
-	fi
-
-	# 600=10 minutes
-	if ! ( grep -Eq "^ClientAliveInterval 300$" "$SSHD_CONF"); then
-		sed -i 's/^.*ClientAliveInterval.*$/ClientAliveInterval 300/' "$SSHD_CONF" || \
-		echo "ClientAliveInterval 300" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: ClientAliveInterval 300"
-	fi
-
-	# set 0 for ClientAliveInterval to be exact
-	if ! ( grep -Eq "^ClientAliveCountMax 0$" "$SSHD_CONF"); then
-		sed -i 's/^.*ClientAliveCountMax.*$/ClientAliveCountMax 0/' "$SSHD_CONF" || \
-		echo "ClientAliveCountMax 0" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
-	fi
-
-
-	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
-	# xccdf_org.ssgproject.content_rule_disable_host_auth
-	if ! ( grep -Eq "^HostbasedAuthentication no$" "$SSHD_CONF"); then
-		sed -i 's/^.*HostbasedAuthentication.*$/HostbasedAuthentication no/' "$SSHD_CONF" || \
-		echo "HostbasedAuthentication no" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: HostbasedAuthentication no"
-	fi
-
-	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
-	# xccdf_org.ssgproject.content_rule_sshd_disable_rhosts
-	if ! ( grep -Eq "^IgnoreRhosts yes$" "$SSHD_CONF"); then
-		sed -i 's/^.*IgnoreRhosts.*$/IgnoreRhosts yes/' "$SSHD_CONF" || \
-		echo "IgnoreRhosts yes" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: IgnoreRhosts yes"
-	fi
-
-	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
-	# xccdf_org.ssgproject.content_rule_sshd_do_not_permit_user_env
-	if ! ( grep -Eq "^PermitUserEnvironment no$" "$SSHD_CONF"); then
-		sed -i 's/^.*PermitUserEnvironment.*$/PermitUserEnvironment no/' "$SSHD_CONF" || \
-		echo "PermitUserEnvironment no" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: PermitUserEnvironment no"
-	fi
-
-	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
-	# xccdf_org.ssgproject.content_rule_sshd_set_loglevel_info
-	if ! ( grep -Eq "^LogLevel INFO$" "$SSHD_CONF"); then
-		sed -i 's/^.*LogLevel INFO.*$/LogLevel INFO/' "$SSHD_CONF" || \
-		echo "LogLevel INFO" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: LogLevel INFO"
-	fi
-	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
-	# xccdf_org.ssgproject.content_rule_sshd_set_max_auth_tries
-	if ! ( grep -Eq "^MaxAuthTries 4$" "$SSHD_CONF"); then
-		sed -i 's/^.*MaxAuthTries.*$/MaxAuthTries 4/' "$SSHD_CONF" || \
-		echo "MaxAuthTries 4" >> "$SSHD_CONF"
-		echo -e "${GREEN}[+]${RESET}Setting: MaxAuthTries 4"
-	fi
-
-	echo -e "${BLUE}[i]${RESET}What port do you want SSH to listen to?"
-	echo "   1) Default: 22"
-	echo "   2) Custom"
-	echo "   3) Random [49152-65535]"
-	until [[ $PORT_CHOICE =~ ^[1-3]$ ]]; do
-		read -rp "[i]Port choice [1-3]: " -e -i 1 PORT_CHOICE
-	done
-	case $PORT_CHOICE in
-	1)
-		PORT="22"
-		;;
-	2)
-		until [[ $PORT =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ]; do
-			read -rp "[i]Custom port [1-65535]: " -e -i 22 PORT
+	if ! (command -v sshd > /dev/null); then
+		echo ""
+		echo "Install OpenSSH server?"
+		echo ""
+		until [[ $SSHD_INSTALL_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " SSHD_INSTALL_CHOICE
 		done
-		;;
-	3)
-		# Generate random number within private ports range
-		PORT=$(shuf -i49152-65535 -n1)
-		echo -e "${GREEN}[i]${RESET}Random Port: ${BOLD}$PORT${RESET}"
-		;;
-	esac
+		if [[ $SSHD_INSTALL_CHOICE == "y" ]]; then
+			if (command -v apt > /dev/null); then
+				sudo apt install -y openssh-server
+			elif (command -v dnf > /dev/null); then
+				dnf install -y openssh-server
+			fi
+		fi
+	elif ! (systemctl is-active sshd > /dev/null); then
+		echo ""
+		echo "Start and enable OpenSSH server?"
+		echo ""
+		until [[ $SSHD_START_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " SSHD_START_CHOICE
+		done
+		if [[ $SSHD_START_CHOICE == "y" ]]; then
 
-	sed -i 's/.*Port .*$/Port '"${PORT}"'/' "$SSHD_CONF"
-
-	echo ""
-	ufw allow in on "$PUB_NIC" to any proto tcp port "${PORT}" comment 'ssh'
-	echo -e "${GREEN}[+]${RESET}Added ufw rules for SSH port ${PORT}."
-	echo ""
-	echo "Restart sshd.service now?"
-	echo ""
-	echo "The current connection will remain established until exiting."
-	echo "Confirm you can login via ssh from another terminal session"
-	echo "after this script completes, and before exiting this current"
-	echo "session."
-	echo ""
-	until [[ $SSHD_RESTART_CHOICE =~ ^(y|n)$ ]]; do
-		read -rp "[y/n]: " SSHD_RESTART_CHOICE
-	done
-	if [[ $SSHD_RESTART_CHOICE == "y" ]]; then
-
-		systemctl restart sshd.service
-		echo -e "${BLUE}[+]${RESET}Restarting sshd.service..."
+			systemctl start sshd
+			systemctl enable sshd
+			echo -e "${BLUE}[+]${RESET}Starting and enabling sshd.service..."
+		fi
 	fi
 
-	echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review all firewall rules before ending this session.${RESET}"
-	sleep 3
+	if [ -e "$SSHD_CONF" ]; then
+		echo -e "${BLUE}[i]${RESET}Regenerating server host keys..."	
+		rm /etc/ssh/ssh_host_*
+		ssh-keygen -A
+
+		echo -e "${BLUE}[i]${RESET}Updating SSHD config..."
+		if ! [ -e /etc/ssh/sshd_config.bkup ]; then
+			cp /etc/ssh/sshd_config -n /etc/ssh/sshd_config.bkup
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+		# xccdf_org.ssgproject.content_group_ssh_server
+
+		if ! (grep -Eq "^PasswordAuthentication no$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*PasswordAuthentication.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication no/g' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PasswordAuthentication no"
+			else
+				echo "PasswordAuthentication no" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PasswordAuthentication no"
+			fi
+		fi
+
+		if ! (grep -Eq "^PermitRootLogin no$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*PermitRootLogin.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin no/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PermitRootLogin no"
+			else
+				echo "PermitRootLogin no" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PermitRootLogin no"
+			fi
+		fi
+
+		# This no longer appears as an option, only referenced in /etc/rkhunter.conf
+#		if ! (grep -Eq "^Protocol 2$" "$SSHD_CONF"); then
+#			if (grep -Eq "^.*Protocol.*$" "$SSHD_CONF"); then
+#				sed -i 's/^.*Protocol.*$/&\nProtocol 2/' "$SSHD_CONF"
+#				echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
+#			else
+#				echo "Protocol 2" >> "$SSHD_CONF"
+#				echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
+#			fi
+#		fi
+
+		if ! (grep -Eq "^PermitEmptyPasswords no$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*PermitEmptyPasswords.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*PermitEmptyPasswords.*$/PermitEmptyPasswords no/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PermitEmptyPasswords no"
+			else
+				echo "PermitEmptyPasswords no" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PermitEmptyPasswords no"
+			fi
+		fi
+
+		if ! (grep -Eq "^AllowAgentForwarding no$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*AllowAgentForwarding.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*AllowAgentForwarding.*$/AllowAgentForwarding no/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: AllowAgentForwarding no"
+			else
+				echo "AllowAgentForwarding no" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: AllowAgentForwarding no"
+			fi
+		fi
+
+		# 600=10 minutes
+		if ! (grep -Eq "^ClientAliveInterval 300$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*ClientAliveInterval.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*ClientAliveInterval.*$/ClientAliveInterval 300/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveInterval 300"
+			else
+				echo "ClientAliveInterval 300" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveInterval 300"
+			fi
+		fi
+
+		# set 0 for ClientAliveInterval to be exact
+		if ! (grep -Eq "^ClientAliveCountMax 0$" "$SSHD_CONF"); then
+			if ( grep -Eq "^.*ClientAliveCountMax.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*ClientAliveCountMax.*$/ClientAliveCountMax 0/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
+			else
+				echo "ClientAliveCountMax 0" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
+			fi
+		fi
+
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+		# xccdf_org.ssgproject.content_rule_disable_host_auth
+		if ! (grep -Eq "^HostbasedAuthentication no$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*HostbasedAuthentication.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*HostbasedAuthentication.*$/HostbasedAuthentication no/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: HostbasedAuthentication no"
+			else
+				echo "HostbasedAuthentication no" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: HostbasedAuthentication no"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+		# xccdf_org.ssgproject.content_rule_sshd_disable_rhosts
+		if ! (grep -Eq "^IgnoreRhosts yes$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*IgnoreRhosts.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*IgnoreRhosts.*$/IgnoreRhosts yes/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: IgnoreRhosts yes"
+			else
+				echo "IgnoreRhosts yes" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: IgnoreRhosts yes"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+		# xccdf_org.ssgproject.content_rule_sshd_do_not_permit_user_env
+		if ! (grep -Eq "^PermitUserEnvironment no$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*PermitUserEnvironment.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*PermitUserEnvironment.*$/PermitUserEnvironment no/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PermitUserEnvironment no"
+			else
+				echo "PermitUserEnvironment no" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: PermitUserEnvironment no"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+		# xccdf_org.ssgproject.content_rule_sshd_set_loglevel_info
+		if ! (grep -Eq "^LogLevel INFO$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*LogLevel INFO.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*LogLevel INFO.*$/LogLevel INFO/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: LogLevel INFO"
+			else
+				echo "LogLevel INFO" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: LogLevel INFO"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
+		# xccdf_org.ssgproject.content_rule_sshd_set_max_auth_tries
+		if ! (grep -Eq "^MaxAuthTries 4$" "$SSHD_CONF"); then
+			if (grep -Eq "^.*MaxAuthTries.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*MaxAuthTries.*$/MaxAuthTries 4/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: MaxAuthTries 4"
+			else
+				echo "MaxAuthTries 4" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: MaxAuthTries 4"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu2004-guide-stig.html
+		# xccdf_org.ssgproject.content_rule_sshd_disable_x11_forwarding
+		if ! (grep -Eq "^X11Forwarding no$" "$SSHD_CONF"); then
+			if ( grep -Eq "^.*X11Forwarding.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*X11Forwarding.*$/X11Forwarding no/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: X11Forwarding no"
+			else
+				echo "X11Forwarding no" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: X11Forwarding no"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu2004-guide-stig.html
+		# xccdf_org.ssgproject.content_rule_sshd_use_approved_ciphers_ordered_stig
+		if ! (grep -Eq "^Ciphers aes256-ctr,aes192-ctr,aes128-ctr$" "$SSHD_CONF"); then
+			if ( grep -Eq "^(#Ciphers|Ciphers).*$" "$SSHD_CONF"); then
+				sed -i 's/^.*Ciphers.*$/Ciphers aes256-ctr,aes192-ctr,aes128-ctr/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: Ciphers aes256-ctr,aes192-ctr,aes128-ctr"
+			else
+				echo "Ciphers aes256-ctr,aes192-ctr,aes128-ctr" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: Ciphers aes256-ctr,aes192-ctr,aes128-ctr"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu2004-guide-stig.html
+		# xccdf_org.ssgproject.content_rule_sshd_use_approved_macs_ordered_stig
+		if ! (grep -Eq "^MACs hmac-sha2-512,hmac-sha2-256$" "$SSHD_CONF"); then
+			if ( grep -Eq "^(MACs|#MACs).*$" "$SSHD_CONF"); then
+				sed -i 's/^.*MACs.*$/MACs hmac-sha2-512,hmac-sha2-256/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: MACs hmac-sha2-512,hmac-sha2-256"
+			else
+				echo "MACs hmac-sha2-512,hmac-sha2-256" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: MACs hmac-sha2-512,hmac-sha2-256"
+			fi
+		fi
+
+		# https://static.open-scap.org/ssg-guides/ssg-ubuntu2004-guide-stig.html
+		# xccdf_org.ssgproject.content_rule_sshd_x11_use_localhost
+		if ! (grep -Eq "^X11UseLocalhost yes$" "$SSHD_CONF"); then
+			if (grep -Eq ".*X11UseLocalhost.*$" "$SSHD_CONF"); then
+				sed -i 's/^.*X11UseLocalhost.*$/X11UseLocalhost yes/' "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: X11UseLocalhost yes"
+			else
+				echo "X11UseLocalhost yes" >> "$SSHD_CONF"
+				echo -e "${GREEN}[+]${RESET}Setting: X11UseLocalhost yes"
+			fi
+		fi
+
+		echo -e "${BLUE}[i]${RESET}What port do you want SSH to listen to?"
+		echo "   1) Default: 22"
+		echo "   2) Custom"
+		echo "   3) Random [49152-65535]"
+		until [[ $PORT_CHOICE =~ ^[1-3]$ ]]; do
+			read -rp "[i]Port choice [1-3]: " -e -i 1 PORT_CHOICE
+		done
+		case $PORT_CHOICE in
+		1)
+			PORT="22"
+			;;
+		2)
+			until [[ $PORT =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ]; do
+				read -rp "[i]Custom port [1-65535]: " -e -i 22 PORT
+			done
+			;;
+		3)
+			# Generate random number within private ports range
+			PORT=$(shuf -i49152-65535 -n1)
+			echo -e "${GREEN}[i]${RESET}Random Port: ${BOLD}$PORT${RESET}"
+			;;
+		esac
+
+		sed -i 's/.*Port .*$/Port '"${PORT}"'/' "$SSHD_CONF"
+
+		echo ""
+		if (command -v iptables > /dev/null); then
+			echo "iptables are available, use ip/ip6tables?"
+			if (command -v ufw > /dev/null); then
+				echo "(otherwise, ufw will be used)"
+			elif (command -v firewall-cmd > /dev/null); then
+				echo "(otherwise, firewall-cmd will be used)"
+			fi
+			echo ""
+			until [[ $IPTABLES_CHOICE =~ ^(y|n)$ ]]; do
+				read -rp "[y/n]: " IPTABLES_CHOICE
+			done
+			if [[ $IPTABLES_CHOICE == "y" ]]; then
+				iptables -A INPUT -i "$PUB_NIC" -p tcp -m tcp --dport "$PORT" -j ACCEPT
+				ip6tables -A INPUT -i "$PUB_NIC" -p tcp -m tcp --dport "$PORT" -j ACCEPT
+			elif [[ $IPTABLES_CHOICE == "n" ]]; then
+				if (command -v ufw > /dev/null); then
+					ufw allow in on "$PUB_NIC" to any proto tcp port "$PORT" comment 'ssh'
+					echo -e "${GREEN}[+]${RESET}Added ufw rules for SSH port ${PORT}."
+				elif (command -v firewall-cmd > /dev/null); then
+					firewall-cmd --add-port="$SSH_PORT"/tcp
+					echo -e "${GREEN}[+]${RESET}Added firewall-cmd rules for SSH port ${PORT}."
+				fi
+			fi
+		fi
+
+		echo ""
+		echo "The current connection will remain established until exiting."
+		echo "Confirm you can login via ssh from another terminal session"
+		echo "after this script completes, and before exiting this current"
+		echo "session."
+		echo ""
+		echo "Restart sshd.service now?"
+		echo ""
+		until [[ $SSHD_RESTART_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " SSHD_RESTART_CHOICE
+		done
+		if [[ $SSHD_RESTART_CHOICE == "y" ]]; then
+
+			systemctl restart sshd.service
+			echo -e "${BLUE}[+]${RESET}Restarting sshd.service..."
+		fi
+
+		echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review all firewall rules before ending this session.${RESET}"
+		sleep 3
+	fi
 }
 
 function blockKmods() {
@@ -1103,6 +1327,9 @@ gpgconf --launch gpg-agent' >>"$HOME_DIR"/.bashrc
 function checkAppArmor() {
 	# Applies to VM,HW,VPS
 
+	AA_FIREFOX=/etc/apparmor.d/usr.bin.firefox
+	AA_FIREFOX_LOCAL=/etc/apparmor.d/local/usr.bin.firefox
+
 	echo "======================================================================"
 
 	echo -e "${BLUE}[i]${RESET}Checking AppArmor profiles."
@@ -1173,10 +1400,11 @@ function installVM() {
 	echo ""
 	VM='true'
 	# Functions
+	MakeTemp
 	checkKernel
 	setPerms
 	checkSudoers
-	#removeBrowser
+	removeBrowser
 	stopServices
 	#updateServices
 	#addVBox
@@ -1184,6 +1412,7 @@ function installVM() {
 	checkNetworking
 	setFirewall
 	checkPackages
+	installPdfTools
 	setResolver
 	installPackages
 	addGroups
@@ -1203,6 +1432,7 @@ function installHW() {
 	echo ""
 	HW='true'
 	# Functions
+	MakeTemp
 	checkKernel
 	setPerms
 	checkSudoers
@@ -1214,6 +1444,7 @@ function installHW() {
 	checkNetworking
 	setFirewall
 	checkPackages
+	#installPdfTools
 	setResolver
 	installPackages
 	#addGroups
@@ -1233,6 +1464,7 @@ function installVPS() {
 	echo ""
 	VPS='true'
 	# Functions
+	MakeTemp
 	checkKernel
 	setPerms
 	checkSudoers
@@ -1244,6 +1476,7 @@ function installVPS() {
 	checkNetworking
 	setFirewall
 	checkPackages
+	#installPdfTools
 	setResolver
 	installPackages
 	#addGroups
