@@ -465,7 +465,7 @@ function setFirewall() {
 
 		echo -e "${BLUE}[i]${RESET}${BOLD}Resetting firewall rules. Answer 'y' to avoid errors${RESET}."
 		ufw reset
-		
+
 		# ipv4
 		sed -i 's/^-A ufw-before-input -p udp -d 224.0.0.251 --dport 5353 -j ACCEPT$/#-A ufw-before-input -p udp -d 224.0.0.251 --dport 5353 -j ACCEPT/' /etc/ufw/before.rules
 		sed -i 's/^-A ufw-before-input -p udp -d 239.255.255.250 --dport 1900 -j ACCEPT$/#-A ufw-before-input -p udp -d 239.255.255.250 --dport 1900 -j ACCEPT/' /etc/ufw/before.rules
@@ -566,9 +566,9 @@ function setResolver() {
 
 				# Apply latest conf and restart
 				systemctl restart unbound
-				
+
 				sleep 2
-				
+
 				if ! (grep -Eq "^nameserver[[:space:]]127.0.0.1$" /etc/resolv.conf); then
 					echo -e "${YELLOW}[i]${RESET}Pointing /etc/resolv.conf to unbound on 127.0.0.1..."
 					sed -i 's/^nameserver[[:space:]]127.0.0.53/nameserver 127.0.0.1/' /etc/resolv.conf || exit 1
@@ -677,23 +677,23 @@ function installPdfTools() {
 
 function installPackages() {
 	# Applies to VM, HW, VPS
-	
+
 	echo -e ""
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
 	if [ "$VPS" = "true" ]; then
-		apt install -y aide auditd easy-rsa openvpn qrencode resolvconf rkhunter tmux wireguard
+		apt install -y aide auditd easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
 	elif [ "$HW" = "true" ]; then
-		apt install -y auditd apparmor-utils curl git pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+		apt install -y auditd apparmor-utils curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
 	elif [ "$VM" = "true" ]; then
 		if (dmesg | grep -q 'vmware'); then
 			apt install -y open-vm-tools-desktop
 		fi
-		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
 		snap install chromium
 		snap install firefox
 		snap install libreoffice
 		snap install vlc
-		
+
 		# Add third party package functions from above below here
 		installPdfTools
 	fi
@@ -722,12 +722,12 @@ function addGroups() {
 		until [[ ${WIRESHARK_REMOVE} =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]: " WIRESHARK_REMOVE
 		done
-		
+
 		if [[ $WIRESHARK_REMOVE == "y" ]]; then
 			deluser "$UID1000" wireshark
 		fi
 	fi
-	
+
 }
 
 function removeGroups() {
@@ -825,6 +825,9 @@ function setRkhunter() {
 
 function setSSH() {
 	# Applies to VPS
+
+	SSHD_CONF='/etc/ssh/sshd_config'
+
 	echo "======================================================================"
 	if ! (command -v sshd > /dev/null); then
 		echo ""
@@ -856,7 +859,7 @@ function setSSH() {
 	fi
 
 	if [ -e "$SSHD_CONF" ]; then
-		echo -e "${BLUE}[i]${RESET}Regenerating server host keys..."	
+		echo -e "${BLUE}[i]${RESET}Regenerating server host keys..."
 		rm /etc/ssh/ssh_host_*
 		ssh-keygen -A
 
@@ -1120,6 +1123,57 @@ function setSSH() {
 
 		echo -e "${RED}"'[!]'"${RESET}${BOLD}Be sure to review all firewall rules before ending this session.${RESET}"
 		sleep 3
+	fi
+}
+
+function setMFA() {
+
+	# https://www.raspberrypi.org/blog/setting-up-two-factor-authentication-on-your-raspberry-pi/
+	# https://github.com/0ptsec/optsecdemo
+
+	SSHD_CONF='/etc/ssh/sshd_config'
+	PAM_LOGIN='/etc/pam.d/login'
+	PAM_GDM='/etc/pam.d/gdm-password'
+	PAM_SSHD='/etc/pam.d/sshd'
+
+	if ! (command -v google-authenticator > /dev/null); then
+		apt install -y libpam-google-authenticator
+	fi
+
+	echo -e "${BLUE}[?]Configure libpam-google-authenticator for MFA login?${RESET}"
+	echo ""
+	until [[ $MFA_CHOICE =~ ^(y|n)$ ]]; do
+		read -rp "[y/n]: " MFA_CHOICE
+	done
+	if [[ $MFA_CHOICE == "y" ]]; then
+		if [ -e "$SSHD_CONF" ]; then
+	                if ! (grep -Eq "^ChallengeResponseAuthentication = yes$" "$SSHD_CONF"); then
+	                        if (grep -Eq "^.*ChallengeResponseAuthentication.*$" "$SSHD_CONF"); then
+	                                sed -i 's/^.*ChallengeResponseAuthentication.*$/ChallengeResponseAuthentication = yes/' "$SSHD_CONF"
+	                                echo -e "${GREEN}[+]${RESET}Setting: ChallengeResponseAuthentication = yes"
+	                        else
+	                                echo "ChallengeResponseAuthentication = yes" >> "$SSHD_CONF"
+	                                echo -e "${GREEN}[+]${RESET}Setting: ChallengeResponseAuthentication = yes"
+	                        fi
+	                fi
+			echo '# libpam-google-authenticator 2fa
+auth required pam_google_authenticator.so no_increment_hotp nullok' >> "$PAM_SSHD"
+
+			systemctl restart sshd
+		fi
+		if ! [[ $VPS == 'true' ]]; then
+			if ! (grep -Eq "^uth required pam_google_authenticator.so no_increment_hotp nullok$" "$PAM_LOGIN"); then
+				echo '# libpam-google-authenticator 2fa
+auth required pam_google_authenticator.so no_increment_hotp nullok' >> "$PAM_LOGIN"
+		fi
+			if ! (grep -Eq "^uth required pam_google_authenticator.so no_increment_hotp nullok$" "$PAM_GDM"); then
+				echo '# libpam-google-authenticator 2fa
+auth required pam_google_authenticator.so no_increment_hotp nullok' >> "$PAM_GDM"
+			fi
+		fi
+
+		pkexec --user "$UID1000" google-authenticator
+
 	fi
 }
 
@@ -1420,7 +1474,8 @@ function installVM() {
 	setPostfix
 	#setAIDE
 	setRkhunter
-	#setSSH
+	setSSH
+	setMFA
 	#blockKmods
 	setLockdown
 	setGnupg
@@ -1452,7 +1507,8 @@ function installHW() {
 	setPostfix
 	#setAIDE
 	setRkhunter
-	#setSSH
+	setSSH
+	setMFA
 	blockKmods
 	setLockdown
 	setGnupg
@@ -1485,6 +1541,7 @@ function installVPS() {
 	setAIDE
 	setRkhunter
 	setSSH
+	setMFA
 	#blockKmods
 	setLockdown
 	#setGnupg
