@@ -9,7 +9,6 @@
 # https://github.com/bfuzzy1/auditd-attack
 # https://github.com/angristan/wireguard-install
 
-
 # Vars
 
 RED="\033[01;31m"      # Errors
@@ -18,9 +17,6 @@ YELLOW="\033[01;33m"   # Warnings
 BLUE="\033[01;34m"     # Success
 BOLD="\033[01;01m"     # Highlight
 RESET="\033[00m"       # Normal
-
-UID1000="$(grep 1000 /etc/passwd | cut -d: -f1)"
-HOME_DIR=/home/"$UID1000"
 
 #PUB_IPV4=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 #PUB_IPV6=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
@@ -31,12 +27,11 @@ VM='false'
 HW='false'
 VPS='false'
 
-
 # Start
 
 function isRoot() {
-	if [ "${EUID}" -ne 0 ]; then
-		echo "You need to run this script as root"
+	if [ "${EUID}" -eq 0 ]; then
+		echo "You need to run this script as a normal user"
 		exit 1
 	fi
 }
@@ -64,8 +59,8 @@ checkHostname
 function checkOS() {
 
 	# Check desktop type
-	# Needs revised
-#	echo -e "${BLUE}[i]$XDG_CURRENT_DESKTOP desktop environment detected${RESET}"
+	DESKTOP="$(echo $XDG_CURRENT_DESKTOP | cut -d ':' -f2)"
+	echo -e "${BLUE}[i]$DESKTOP desktop environment detected${RESET}"
 
 	# Check OS version
 	OS="$(grep -E "^ID=" /etc/os-release | cut -d '=' -f 2)"
@@ -123,7 +118,7 @@ function MakeTemp() {
 }
 
 function checkKernel() {
-	# Applies to VM, HW, VPS
+	
 	echo -e "${BLUE}[i]${RESET}Checking kernel parameters..."
 
 	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-standard.html
@@ -133,72 +128,72 @@ function checkKernel() {
 	# a Debian package maintainer script "deb-systemd-invoke restart procps.service").
 
 	# xccdf_org.ssgproject.content_rule_sysctl_fs_protected_hardlinks
-	if (sysctl -a | grep -qxE "^fs\.protected_hardlinks = 1$"); then
+	if (sudo sysctl -a | grep -qxE "^fs\.protected_hardlinks = 1$"); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> fs.protected_hardlinks = 1"
 	else
-		sysctl -q -n -w fs.protected_hardlinks="1"
+		sudo sysctl -q -n -w fs.protected_hardlinks="1"
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> fs.protected_hardlinks = 1"
-		echo 'fs.protected_hardlinks = 1' > /etc/sysctl.d/10-local-ssg.conf
+		echo 'fs.protected_hardlinks = 1' | sudo tee /etc/sysctl.d/10-local-ssg.conf
 	fi
 
 	# xccdf_org.ssgproject.content_rule_sysctl_fs_protected_symlinks
-	if (sysctl -a | grep -qxE "^fs\.protected_symlinks = 1$"); then
+	if (sudo sysctl -a | grep -qxE "^fs\.protected_symlinks = 1$"); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> fs.protected_symlinks = 1"
 	else
-		sysctl -q -n -w fs.protected_symlinks="1"
+		sudo sysctl -q -n -w fs.protected_symlinks="1"
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> fs.protected_symlinks = 1"
-		echo 'fs.protected_symlinks = 1' >> /etc/sysctl.d/10-local-ssg.conf
+		echo 'fs.protected_symlinks = 1' | sudo tee -a /etc/sysctl.d/10-local-ssg.conf
 	fi
 
 	# xccdf_org.ssgproject.content_rule_sysctl_fs_suid_dumpable
-	if (sysctl -a | grep -qxE "^fs\.suid_dumpable = 0$"); then 
+	if (sudo sysctl -a | grep -qxE "^fs\.suid_dumpable = 0$"); then 
 		echo -e "${BLUE}[OK]${RESET}kernel -> fs.suid_dumpable = 0"
 	else
-		sysctl -q -n -w fs.suid_dumpable="0"
+		sudo sysctl -q -n -w fs.suid_dumpable="0"
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> fs.suid_dumpable = 0"
-		echo 'fs.suid_dumpable = 0' >> /etc/sysctl.d/10-local-ssg.conf
+		echo 'fs.suid_dumpable = 0' | sudo tee -a /etc/sysctl.d/10-local-ssg.conf
 	fi
 
 	# xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space
-	if (sysctl -a | grep -qxE "^kernel\.randomize_va_space = 2$"); then
+	if (sudo sysctl -a | grep -qxE "^kernel\.randomize_va_space = 2$"); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> kernel.randomize_va_space = 2"
 	else
-		sysctl -q -n -w kernel.randomize_va_space="2"
+		sudo sysctl -q -n -w kernel.randomize_va_space="2"
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> kernel.randomize_va_space = 2"
-		echo 'kernel.randomize_va_space = 2' >> /etc/sysctl.d/10-local-ssg.conf
+		echo 'kernel.randomize_va_space = 2' | sudo tee -a /etc/sysctl.d/10-local-ssg.conf
 	fi
 
 	# xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_tcp_syncookies
-	if (sysctl -a | grep -qxE "^net\.ipv4\.tcp_syncookies = 1$"); then
+	if (sudo sysctl -a | grep -qxE "^net\.ipv4\.tcp_syncookies = 1$"); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> net.ipv4.tcp_syncookies = 1"
 	else
-		sysctl -w net.ipv4.tcp_syncookies="1"
+		sudo sysctl -w net.ipv4.tcp_syncookies="1"
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> net.ipv4.tcp_syncookies = 1"
-		echo 'net.ipv4.tcp_syncookies = 1' >> /etc/sysctl.d/10-local-ssg.conf
+		echo 'net.ipv4.tcp_syncookies = 1' | sudo tee -a /etc/sysctl.d/10-local-ssg.conf
 	fi
 
 	# magic-sysrq-key
-	if (sysctl -a | grep -qxE "^kernel\.sysrq = 0$"); then
+	if (sudo sysctl -a | grep -qxE "^kernel\.sysrq = 0$"); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> kernel.sysrq (Ctrl+Alt+Del) = 0"
 	else
-		sysctl -q -n -w kernel.sysrq="0"
+		sudo sysctl -q -n -w kernel.sysrq="0"
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> kernel.sysrq (Ctrl+Alt+Del) = 0"
 		if [ -e /etc/sysctl.d/10-magic-sysrq.conf ]; then
-			sed -i 's/^kernel.sysrq = .*$/kernel.sysrq = 0/' /etc/sysctl.d/10-magic-sysrq.conf
+			sudo sed -i 's/^kernel.sysrq = .*$/kernel.sysrq = 0/' /etc/sysctl.d/10-magic-sysrq.conf
 		else
-			echo 'kernel.sysrq = 0' >> /etc/sysctl.d/10-local-ssg.conf
+			echo 'kernel.sysrq = 0' | sudo tee -a /etc/sysctl.d/10-local-ssg.conf
 		fi
 	fi
 
 	# https://github.com/nongiach/sudo_inject
 	# https://github.com/carlospolop/hacktricks/tree/master/linux-unix/privilege-escalation#reusing-sudo-tokens
 	# cat /proc/sys/kernel/yama/ptrace_scope
-	if (sysctl -a | grep -qxE "^kernel\.yama\.ptrace_scope = [^0]$"); then
+	if (sudo sysctl -a | grep -qxE "^kernel\.yama\.ptrace_scope = [^0]$"); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> kernel.ptrace_scope != 0"
 	else
-		sysctl -q -n -w kernel.yama.ptrace_scope="1"
+		sudo sysctl -q -n -w kernel.yama.ptrace_scope="1"
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> kernel.yama.ptrace_scope = 1"
-		echo 'kernel.yama.ptrace_scope = 1' >> /etc/sysctl.d/10-local-ssg.conf
+		echo 'kernel.yama.ptrace_scope = 1' | sudo tee -a /etc/sysctl.d/10-local-ssg.conf
 	fi
 
 
@@ -206,20 +201,20 @@ function checkKernel() {
 	# xccdf_org.ssgproject.content_rule_coredump_disable_backtraces
 	# xccdf_org.ssgproject.content_rule_coredump_disable_storage
 	if ! [ -e /etc/systemd/coredump.conf ]; then
-		touch "/etc/systemd/coredump.conf"
+		sudo touch "/etc/systemd/coredump.conf"
 	fi
 
 	if (grep -Eqx "^ProcessSizeMax=0$" /etc/systemd/coredump.conf); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> backtraces disabled -> ProcessSizeMax=0"
 	else
-		echo "ProcessSizeMax=0" >> /etc/systemd/coredump.conf
+		echo "ProcessSizeMax=0" | sudo tee -a /etc/systemd/coredump.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> backtraces disabled -> ProcessSizeMax=0"
 	fi
 
 	if (grep -Eqx "^Storage=none$" /etc/systemd/coredump.conf); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> coredumps disabled -> Storage=none"
 	else
-		echo "Storage=none" >> /etc/systemd/coredump.conf
+		echo "Storage=none" | sudo tee -a /etc/systemd/coredump.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> coredumps disabled -> Storage=none"
 	fi
 
@@ -229,7 +224,7 @@ function checkKernel() {
 	if (grep -Eqx "^install rds /bin/true$" /etc/modprobe.d/rds.conf); then
 		echo -e "${BLUE}[OK]${RESET}kernel -> 'install rds /bin/true' -> /etc/modprobe.d/rds.conf"
 	else
-		echo 'install rds /bin/true' > /etc/modprobe.d/rds.conf
+		echo 'install rds /bin/true' | sudo tee /etc/modprobe.d/rds.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> 'install rds /bin/true' -> /etc/modprobe.d/rds.conf"
 	fi
 
@@ -238,7 +233,7 @@ function checkKernel() {
 	if (grep -Eqx "^install tipc /bin/true$" /etc/modprobe.d/tipc.conf); then 
 		echo -e "${BLUE}[OK]${RESET}kernel -> 'install tipc /bin/true' -> /etc/modprobe.d/tipc.conf"
 	else
-		echo 'install tipc /bin/true' > /etc/modprobe.d/tipc.conf
+		echo 'install tipc /bin/true' | sudo tee /etc/modprobe.d/tipc.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> 'install tipc /bin/true' -> /etc/modprobe.d/tipc.conf"
 	fi
 
@@ -249,29 +244,28 @@ function checkKernel() {
 		echo -e "${BLUE}[OK]${RESET}kernel -> iommu=force -> /etc/grub/default"
 	elif grep -q '^GRUB_CMDLINE_LINUX=.*iommu=.*"'  '/etc/default/grub' ; then
 		# modify the GRUB command-line if an iommu= arg already exists
-		sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)iommu=[^[:space:]]*\(.*"\)/\1 iommu=force \2/'  '/etc/default/grub'
+		sudo sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)iommu=[^[:space:]]*\(.*"\)/\1 iommu=force \2/'  '/etc/default/grub'
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> iommu=force -> /etc/grub/default"
 	elif ! (grep -q '^GRUB_CMDLINE_LINUX=.*iommu=.*"'  '/etc/default/grub'); then
 		# no iommu=arg is present, append it
-		sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)"/\1 iommu=force"/'  '/etc/default/grub'
+		sudo sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)"/\1 iommu=force"/'  '/etc/default/grub'
 		echo -e "${YELLOW}[UPDATED]${RESET}kernel -> iommu=force -> /etc/grub/default"
 	fi
 
 	# Add other kernel parameter changes here
 
-	update-grub
+	sudo update-grub
 
 }
 
 function setPerms() {
-	# Applies to VM, HW, VPS
 
 	ADDUSER_CONF=/etc/adduser.conf
 
 	echo "======================================================================"
 	if ! (grep -qx 'DIR_MODE=0750' "$ADDUSER_CONF"); then
-		sed -i 's/DIR_MODE=0755/DIR_MODE=0750/' "$ADDUSER_CONF"
-		chmod 750 "$HOME_DIR"
+		sudo sed -i 's/DIR_MODE=0755/DIR_MODE=0750/' "$ADDUSER_CONF"
+		chmod 750 "$HOME"
 		echo -e "${GREEN}[+]${RESET}User DAC policy updated successfully."
 	else
 		echo -e "${BLUE}[i]${RESET}User DAC policy already updated. Skipping."
@@ -280,24 +274,38 @@ function setPerms() {
 
 function checkSudoers() {
 	# Applies to pre-installed Raspberry Pi images
+	# and cloud images where /etc/sudoers.d/90-init-cloud-users has 'NOPASSWD:ALL' set
+	
 	for file in /etc/sudoers.d/* ; do
-		if (grep -q "^$UID1000 ALL=(ALL) NOPASSWD:ALL$" "$file"); then
+		if (sudo grep -q "^$USERNAME ALL=(ALL) NOPASSWD:ALL$" "$file"); then
+			echo -e "${BLUE}[i]${RESET}Found 'NOPASSWD:ALL' set for '$USERNAME' in $file."
+			if (passwd -S "$USERNAME" | grep -P "$USERNAME (L|NP)" > /dev/null); then
+				echo -e "User $USERNAME was also found to be locked or had no password set."
+				echo "Set a new password now?"
+				echo ""
+				until [[ $PASSWD_CHOICE =~ ^(y|n)$ ]]; do
+					read -rp "[y/n]: " PASSWD_CHOICE
+				done
+				if [[ $PASSWD_CHOICE == "y" ]]; then
+					sudo passwd "$USERNAME"
+				fi
+			fi
 			echo -e "${BLUE}[i]${RESET}Commenting out 'NOPASSWD:ALL' in $file"
-			sed -i 's/^'"$UID1000"' ALL=(ALL) NOPASSWD:ALL$/#'"$UID1000"' ALL=(ALL) NOPASSWD:ALL/' "$file"
+			sudo sed -i 's/^'"$USERNAME"' ALL=(ALL) NOPASSWD:ALL$/#'"$USERNAME"' ALL=(ALL) NOPASSWD:ALL/' "$file"
 		fi
 	done
 }
 
 function removeBrowser() {
-	# Applies to HW, VM
+
 	# Replace with either Chromium or Firefox snap packages
 	echo "======================================================================"
 	if ! (snap list | grep firefox > /dev/null); then
 		for package in $(dpkg --list | grep firefox | cut -d ' ' -f 3); do 
-			apt autoremove --purge -y "$package"
+			sudo apt autoremove --purge -y "$package"
 		done
-		rm -rf /usr/lib/firefox* > /dev/null
-		rm -rf /usr/lib64/firefox* > /dev/null
+		sudo rm -rf /usr/lib/firefox* > /dev/null
+		sudo rm -rf /usr/lib64/firefox* > /dev/null
 	else
 		echo -e "${BLUE}[i]${RESET}Default browser already removed. Skipping."
 	fi
@@ -305,68 +313,66 @@ function removeBrowser() {
 
 
 function stopServices() {
-	# Applies to VM, HW
+
 	echo "======================================================================"
 	# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-standard.html
 	# xccdf_org.ssgproject.content_rule_service_apport_disabled
 	echo -e "${BLUE}[i]${RESET}Checking apport.service..."
 	if (systemctl is-active apport); then
-		systemctl stop apport
-		systemctl disable apport
-		systemctl mask --now apport.service
+		sudo systemctl stop apport
+		sudo systemctl disable apport
+		sudo systemctl mask --now apport.service
 	elif (systemctl is-enabled apport); then
-		systemctl disable apport
-		systemctl mask --now apport.service
+		sudo systemctl disable apport
+		sudo systemctl mask --now apport.service
 	fi
 
 	# cups
 	echo -e "${BLUE}[i]${RESET}Checking service: cups..."
 	if (systemctl is-active cups); then
-		systemctl stop cups
+		sudo systemctl stop cups
 	fi
 	if (systemctl is-enabled cups); then
-		systemctl disable cups
-		systemctl mask cups
+		sudo systemctl disable cups
+		sudo systemctl mask cups
 	fi
 	# cups-browsed
 	echo -e "${BLUE}[i]${RESET}Checking service: cups-browsed..."
 	if (systemctl is-active cups-browsed); then
-		systemctl stop cups-browsed
+		sudo systemctl stop cups-browsed
 	fi
 	if (systemctl is-enabled cups-browsed); then
-		systemctl disable cups-browsed
-		systemctl mask cups-browsed
+		sudo systemctl disable cups-browsed
+		sudo systemctl mask cups-browsed
 	fi
 	# avahi
 	echo -e "${BLUE}[i]${RESET}Checking service: avahi-daemon..."
 	if (systemctl is-active avahi-daemon); then
-		systemctl stop avahi-daemon
+		sudo systemctl stop avahi-daemon
 	fi
 	if (systemctl is-enabled avahi-daemon); then
-		systemctl disable avahi-daemon
-		systemctl mask avahi-daemon
+		sudo systemctl disable avahi-daemon
+		sudo systemctl mask avahi-daemon
 	fi
 	echo -e "${BLUE}[i]${RESET}All non-essential services stopped and disabled."
 }
 
 function updateServices() {
-	# Applies to VPS (only for Digital Ocean Agent)
-	# For OSes with systemctl:
-	# Modify the exec command
+
+	# For OS's with systemctl, modify the exec command
 	if [ -e '/etc/systemd/system/do-agent.service' ]; then
 		if ! (grep -q '\-\-no\-collector.process' '/etc/systemd/system/do-agent.service' ); then
 			echo "======================================================================"
 			echo -e "${BLUE}[i]${RESET}Checking do-agent.service's exec command options have been updated."
-			sed -i 's%ExecStart=/opt/digitalocean/bin/do-agent%ExecStart=/opt/digitalocean/bin/do-agent --no-collector.processes%' /etc/systemd/system/do-agent.service
+			sudo sed -i 's%ExecStart=/opt/digitalocean/bin/do-agent%ExecStart=/opt/digitalocean/bin/do-agent --no-collector.processes%' /etc/systemd/system/do-agent.service
 			# Restart the agent
-			systemctl daemon-reload
-			systemctl restart do-agent
+			sudo systemctl daemon-reload
+			sudo systemctl restart do-agent
 		fi
 	fi
 }
 
 function addVBox() {
-	# Applies to HW
 
 	VBOX_APT_LIST=/etc/apt/sources.list.d/virtualbox.list
 
@@ -390,7 +396,7 @@ function addVBox() {
 			echo -e "${GREEN}[+]${RESET}Adding VirtualBox apt-key from local file.${RESET}"
 			echo -e "${GREEN}[+]${RESET}VirtualBox sources.list created at $VBOX_APT_LIST."
 			apt-key add ./oracle_vbox_2016.asc
-			echo "deb [arch=amd64] https://download.virtualbox.org/virtualbox/debian $CODENAME contrib" > "$VBOX_APT_LIST"
+			echo "deb [arch=amd64] https://download.virtualbox.org/virtualbox/debian $CODENAME contrib" | sudo tee "$VBOX_APT_LIST"
 		fi
 	elif [[ $VBOX_CHOICE == "n" ]] && [ -e "$VBOX_APT_LIST" ]; then
 		echo "======================================================================"
@@ -402,10 +408,10 @@ function addVBox() {
 		done
 
 		if [[ $REMOVE_VBOX == "y" ]]; then
-			rm "$VBOX_APT_LIST"
-			apt-key del 'B9F8 D658 297A F3EF C18D  5CDF A2F6 83C5 2980 AECF'
-			apt update
-			apt autoremove -y
+			sudo rm "$VBOX_APT_LIST"
+			sudo apt-key del 'B9F8 D658 297A F3EF C18D  5CDF A2F6 83C5 2980 AECF'
+			sudo apt update
+			sudo apt autoremove -y
 			echo ""
 			echo -e "${BLUE}[-]${RESET}VirtualBox removed from sources.list and apt keyring."
 			echo ""
@@ -414,7 +420,7 @@ function addVBox() {
 }
 
 function setIpv6() {
-	# Applies to VM, HW, VPS
+
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Disable IPV6?"
 	echo ""
@@ -422,17 +428,17 @@ function setIpv6() {
 		read -rp "[y/n]: " IPV6_CHOICE
 	done
 	if [[ $IPV6_CHOICE == "y" ]]; then
-		sed -i 's/^IPV6=yes$/IPV6=no/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
+		sudo sed -i 's/^IPV6=yes$/IPV6=no/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
 	elif [[ $IPV6_CHOICE == "n" ]] && (grep -qx 'IPV6=no' /etc/default/ufw) ; then
-		sed -i 's/^IPV6=no$/IPV6=yes/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
+		sudo sed -i 's/^IPV6=no$/IPV6=yes/' /etc/default/ufw && echo -e "${BOLD}[+] ipv6 settings changed.${RESET}"
 		# enable ipv6 privacy addressing
-		sed -i 's/^#net\/ipv6\/conf\/default\/use_tempaddr=2$/net\/ipv6\/conf\/default\/use_tempaddr=2/' /etc/ufw/sysctl.conf
-		sed -i 's/^#net\/ipv6\/conf\/all\/use_tempaddr=2/net\/ipv6\/conf\/all\/use_tempaddr=2/' /etc/ufw/sysctl.conf
+		sudo sed -i 's/^#net\/ipv6\/conf\/default\/use_tempaddr=2$/net\/ipv6\/conf\/default\/use_tempaddr=2/' /etc/ufw/sysctl.conf
+		sudo sed -i 's/^#net\/ipv6\/conf\/all\/use_tempaddr=2/net\/ipv6\/conf\/all\/use_tempaddr=2/' /etc/ufw/sysctl.conf
 	fi
 }
 
 function checkNetworking() {
-	# Applies to VM, HW, VPS
+
 	# https://www.blackhillsinfosec.com/how-to-disable-llmnr-why-you-want-to/
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Checking networking settings..."
@@ -440,61 +446,103 @@ function checkNetworking() {
 	if (grep -Eqx "^LLMNR=no$" /etc/systemd/resolved.conf); then 
 		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
 	else
-		sed -i 's/^.*LLMNR=.*$/LLMNR=no/' /etc/systemd/resolved.conf
+		sudo sed -i 's/^.*LLMNR=.*$/LLMNR=no/' /etc/systemd/resolved.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> LLMNR=no"
 	fi
 
 	if (grep -Eqx "^MulticastDNS=no$" /etc/systemd/resolved.conf); then
 		echo -e "${BLUE}[OK]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
 	else
-		sed -i 's/^.*MulticastDNS=.*$/MulticastDNS=no/' /etc/systemd/resolved.conf
+		sudo sed -i 's/^.*MulticastDNS=.*$/MulticastDNS=no/' /etc/systemd/resolved.conf
 		echo -e "${YELLOW}[UPDATED]${RESET}/etc/systemd/resolved.conf -> MulticastDNS=no"
 	fi
 }
 
 function setFirewall() {
-	# Applies to VM, HW, VPS
+	
+	if [ -e "/etc/ssh/sshd_config" ];then
+		SERVER_SSH_PORT="$(grep -E "^Port ([0-9]{1,5})" /etc/ssh/sshd_config | cut -d ' ' -f 2)"
+	fi
+	
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Modify the firewall rules?"
 	echo ""
-	echo -e "${RED}[i]${RESET}(choose 'y' if the ipv6 settings were just changed or if this is the first run)"
-	until [[ $UFW_CHOICE =~ ^(y|n)$ ]]; do
-		read -rp "[y/n]: " UFW_CHOICE
+	echo "This will set a basic deny all inbound, allow all outbound, deny routed policy"
+	echo "This function reads ssh connection settings in /etc/ssh/sshd_config"
+	echo ""
+	until [[ $FW_CHOICE =~ ^(y|n)$ ]]; do
+		read -rp "[y/n]: " FW_CHOICE
 	done
-	if [[ $UFW_CHOICE == "y" ]]; then
+	if [[ $FW_CHOICE == "y" ]]; then
 
-		echo -e "${BLUE}[i]${RESET}${BOLD}Resetting firewall rules. Answer 'y' to avoid errors${RESET}."
-		ufw reset
+		if (command -v ufw > /dev/null); then
+			echo -e "${BLUE}[i]${RESET}Using ufw..."
+			sudo ufw reset
+			sudo ufw enable
+			sudo ufw default deny incoming
+			sudo ufw default allow outgoing
+			sudo ufw default deny routed
+			
+			if [ -e /etc/ssh/sshd_config ]; then
+				if ! [[ "$SERVER_SSH_PORT" == "" ]];then
+					sudo ufw allow in port "$SERVER_SSH_PORT" proto tcp comment 'ssh'
+				else
+					sudo ufw allow ssh
+				fi
+			fi
+		else
+			echo -e "${BLUE}[i]${RESET}Using iptables..."
+			sudo iptables -F    # Flush all chains
+			sudo iptables -X    # Delete all user-defined chains
 
-		# ipv4
-		sed -i 's/^-A ufw-before-input -p udp -d 224.0.0.251 --dport 5353 -j ACCEPT$/#-A ufw-before-input -p udp -d 224.0.0.251 --dport 5353 -j ACCEPT/' /etc/ufw/before.rules
-		sed -i 's/^-A ufw-before-input -p udp -d 239.255.255.250 --dport 1900 -j ACCEPT$/#-A ufw-before-input -p udp -d 239.255.255.250 --dport 1900 -j ACCEPT/' /etc/ufw/before.rules
-		# ipv6
-		sed -i 's/^-A ufw6-before-input -p udp -d ff02::fb --dport 5353 -j ACCEPT$/#-A ufw6-before-input -p udp -d ff02::fb --dport 5353 -j ACCEPT/' /etc/ufw/before6.rules
-		sed -i 's/^-A ufw6-before-input -p udp -d ff02::f --dport 1900 -j ACCEPT$/#-A ufw6-before-input -p udp -d ff02::f --dport 1900 -j ACCEPT/' /etc/ufw/before6.rules
+			sudo ip6tables -F    # Flush all chains
+			sudo ip6tables -X    # Delete all user-defined chains
+			
+			sudo iptables -P INPUT DROP
+			sudo iptables -P FORWARD DROP
+			sudo iptables -P OUTPUT ACCEPT
 
-		ufw enable
-		ufw default deny incoming
-		ufw default deny outgoing
-		ufw allow out on "$PUB_NIC" to any proto tcp port 80,443
-		ufw allow out on "$PUB_NIC" to any proto udp port 123
-		ufw allow out on "$PUB_NIC" to any proto udp port 53
-		ufw prepend deny out to 192.168.0.0/16
-		ufw prepend deny out to 172.16.0.0/12
-		ufw prepend deny out to 169.254.0.0/16
-		ufw prepend deny out to 10.0.0.0/8
-		ufw prepend deny out on "$PUB_NIC" to 127.0.0.0/8
-		if (grep -qx 'IPV6=yes' /etc/default/ufw); then
-			ufw prepend deny out to fc00::/7
-			ufw prepend deny out on "$PUB_NIC" to ::1
-		fi
-		if echo "$GTWY" | grep -qE '^(10\.|172\.1[6789]\.|172\.2[0-9]\.|172\.3[01]\.|192\.168)'; then
-			ufw prepend allow out on "$PUB_NIC" to "$GTWY"
-			if (dmesg | grep -q 'VirtualBox') && (echo "$GTWY" | grep -qx 10.0.2.2); then
-				ufw insert 2 allow out on "$PUB_NIC" to '10.0.2.3'
+			sudo ip6tables -P INPUT DROP
+			sudo ip6tables -P FORWARD DROP
+			sudo ip6tables -P OUTPUT ACCEPT
+
+			sudo iptables -A INPUT -i lo -j ACCEPT
+			sudo iptables -A INPUT -o lo -j ACCEPT
+			sudo iptables -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+			sudo iptables -A INPUT -m conntrack --ctstate INVALID -j DROP
+			sudo iptables -A INPUT -p icmp -m icmp --icmp-type 3 -j ACCEPT
+			sudo iptables -A INPUT -p icmp -m icmp --icmp-type 11 -j ACCEPT
+			sudo iptables -A INPUT -p icmp -m icmp --icmp-type 12 -j ACCEPT
+			sudo iptables -A INPUT -p icmp -m icmp --icmp-type 8 -j ACCEPT
+			sudo iptables -A INPUT -p udp -m udp --sport 67 --dport 68 -j ACCEPT
+
+			sudo ip6tables -A INPUT -i lo -j ACCEPT
+			sudo ip6tables -A INPUT -o lo -j ACCEPT
+
+			sudo ip6tables -A INPUT -m rt --rt-type 0 -j DROP
+			sudo ip6tables -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+			sudo ip6tables -A INPUT -p ipv6-icmp -m icmp6 --icmpv6-type 129 -j ACCEPT                                  # ALLOW echo reply
+			sudo ip6tables -A INPUT -m conntrack --ctstate INVALID -j DROP
+			sudo ip6tables -A INPUT -p ipv6-icmp -m icmp6 --icmpv6-type 1/4 -j ACCEPT                                  # changed to be code 4 only
+			sudo ip6tables -A INPUT -p ipv6-icmp -m icmp6 --icmpv6-type 2 -j ACCEPT
+			sudo ip6tables -A INPUT -p ipv6-icmp -m icmp6 --icmpv6-type 3/0 -j ACCEPT                                  # changed to be code 0 only
+			sudo ip6tables -A INPUT -p ipv6-icmp -m icmp6 --icmpv6-type 4/0 -j ACCEPT                                  # changed to be code 0 & 1 only
+			sudo ip6tables -A INPUT -p ipv6-icmp -m icmp6 --icmpv6-type 4/1 -j ACCEPT                                  # changed to be code 0 & 1 only
+			sudo ip6tables -A INPUT -p ipv6-icmp -m icmp6 --icmpv6-type 128 -j ACCEPT   
+
+			sudo ip6tables -A INPUT -s fe80::/10 -d fe80::/10 -p udp -m udp --sport 547 --dport 546 -j ACCEPT
+
+			if [ -e /etc/ssh/sshd_config ]; then
+				if ! [[ "$SERVER_SSH_PORT" == "" ]];then
+					sudo iptables -A INPUT -p tcp -m tcp --dport "$SERVER_SSH_PORT" -j ACCEPT
+					sudo ip6tables -A INPUT -p tcp -m tcp --dport "$SERVER_SSH_PORT" -j ACCEPT
+				else
+					sudo iptables -A INPUT -p tcp -m tcp --dport 22 -j ACCEPT
+					sudo ip6tables -A INPUT -p tcp -m tcp --dport 22 -j ACCEPT
+				fi
 			fi
 		fi
-		echo -e "${BLUE}[+]${RESET}Basic firewall egress rules are live."
+		echo -e "${BLUE}[+]${RESET}Basic firewall rules are live."
 	fi
 }
 
@@ -511,24 +559,24 @@ function checkPackages() {
 	# xccdf_org.ssgproject.content_rule_package_rsh-server_removed
 
 	echo -e "${BLUE}[-]${RESET}Removing any deprecated packages and protocols..."
-	apt-get autoremove --purge -y inetutils-telnetd telnetd-ssl telnetd nis ntpdate rsh-server
+	sudo apt-get autoremove --purge -y inetutils-telnetd telnetd-ssl telnetd nis ntpdate rsh-server
 
 	sleep 2
 
 	echo -e "${BLUE}[i]${RESET}Upgrading apt packages..."
 	sleep 3
-	apt-get update && \
-	apt-get upgrade -y
+	sudo apt-get update && \
+	sudo apt-get upgrade -y
 	sleep 2
 	echo -e "${BLUE}[i]${RESET}Autoremoving old packages."
-	apt-get clean
-	apt-get autoremove --purge -y
+	sudo apt-get clean
+	sudo apt-get autoremove --purge -y
 	sleep 2
 
 
 	if (command -v snap > /dev/null); then
 		echo -e "${BLUE}[i]${RESET}Checking for snap packages..."
-		snap refresh
+		sudo snap refresh
 	fi
 
 	sleep 1
@@ -536,7 +584,7 @@ function checkPackages() {
 }
 
 function setResolver() {
-	# Applies to VM, HW, VPS
+
 	if ! (command -v unbound > /dev/null); then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}Install Unbound?"
@@ -545,33 +593,29 @@ function setResolver() {
 			read -rp "[y/n]: " UNBOUND_CHOICE
 		done
 		if [[ $UNBOUND_CHOICE == "y" ]]; then
-			apt install -y unbound
-			if [ -e ./unbound.conf ]; then
-				# Replace any default conf files if we have our own in cwd
-				cp ./unbound.conf -t /etc/unbound/
-				rm /etc/unbound/unbound.conf.d/*.conf
-			fi
-			if ! (unbound-checkconf | grep 'no errors'); then
+			sudo apt install -y unbound
+
+			if ! (sudo unbound-checkconf | grep 'no errors'); then
 				echo -e "${RED}[i]${RESET}Error with unbound configuration. Quitting."
 				echo -e "${RED}[i]${RESET}Address any configuration errors above then re-run this script."
 				exit 1
 			else
 				echo -e "${BLUE}[i]${RESET}Stopping and disabling systemd-resolved service..."
 				if (systemctl is-active systemd-resolved); then
-					systemctl stop systemd-resolved
+					sudo systemctl stop systemd-resolved
 				fi
 				if (systemctl is-enabled systemd-resolved); then
-					systemctl disable systemd-resolved
+					sudo systemctl disable systemd-resolved
 				fi
 
 				# Apply latest conf and restart
-				systemctl restart unbound
+				sudo systemctl restart unbound
 
 				sleep 2
 
 				if ! (grep -Eq "^nameserver[[:space:]]127.0.0.1$" /etc/resolv.conf); then
 					echo -e "${YELLOW}[i]${RESET}Pointing /etc/resolv.conf to unbound on 127.0.0.1..."
-					sed -i 's/^nameserver[[:space:]]127.0.0.53/nameserver 127.0.0.1/' /etc/resolv.conf || exit 1
+					sudo sed -i 's/^nameserver[[:space:]]127.0.0.53/nameserver 127.0.0.1/' /etc/resolv.conf || exit 1
 				fi
 			fi
 			echo -e "${BLUE}[i]${RESET}Done."
@@ -580,8 +624,8 @@ function setResolver() {
 }
 
 function installPdfTools() {
-	# pdftools
 
+	# pdftools
 	# Update these values when newer versions are available
 	PDF_TOOLS_DIR="/opt/pdftools"
 	PDFID_HASH="bb3898900e31a427bcd67629e7fc7acfe1a2e3fd0400bd1923e8b86eda5cb118"
@@ -603,7 +647,7 @@ function installPdfTools() {
 
 			echo -e "${BLUE}[i]Downloading pdftools...${RESET}"
 
-			mkdir "$PDF_TOOLS_DIR"
+			sudo mkdir "$PDF_TOOLS_DIR"
 
 			#======================================================================
 
@@ -627,14 +671,14 @@ function installPdfTools() {
 			pdfid-"$PDFID_GIT"/plugin_triage.py \
 			pdfid-"$PDFID_GIT"/debian/copyright
 
-			mv "$SETUPDIR"/pdfid-"$PDFID_GIT" "$PDFID_DIR"
-			chmod 755 "$PDFID_DIR"/pdfid.py
-			ln -s "$PDFID_DIR"/pdfid.py /usr/local/bin/pdfid
+			sudo mv "$SETUPDIR"/pdfid-"$PDFID_GIT" "$PDFID_DIR"
+			sudo chmod 755 "$PDFID_DIR"/pdfid.py
+			sudo ln -s "$PDFID_DIR"/pdfid.py /usr/local/bin/pdfid
 
 			rm "$SETUPDIR"/pdfid-"$PDFID_GIT".zip
 
 			# Change pdfid.py to python3
-			sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFID_DIR"/pdfid.py
+			sudo sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFID_DIR"/pdfid.py
 
 			#======================================================================
 
@@ -654,14 +698,14 @@ function installPdfTools() {
 			pdf-parser-"$PDFPARSER_GIT"/debian/copyright \
 			pdf-parser-"$PDFPARSER_GIT"/debian/changelog
 
-			mv "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT" "$PDFPARSER_DIR"
-			chmod 755 "$PDFPARSER_DIR"/pdf-parser.py
-			ln -s "$PDFPARSER_DIR"/pdf-parser.py /usr/local/bin/pdf-parser
+			sudo mv "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT" "$PDFPARSER_DIR"
+			sudo chmod 755 "$PDFPARSER_DIR"/pdf-parser.py
+			sudo ln -s "$PDFPARSER_DIR"/pdf-parser.py /usr/local/bin/pdf-parser
 
 			rm "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT".zip
 
 			# Change pdf-parser.py to python3
-			sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFPARSER_DIR"/pdf-parser.py
+			sudo sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFPARSER_DIR"/pdf-parser.py
 
 			#======================================================================
 
@@ -676,23 +720,22 @@ function installPdfTools() {
 }
 
 function installPackages() {
-	# Applies to VM, HW, VPS
 
 	echo -e ""
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
 	if [ "$VPS" = "true" ]; then
-		apt install -y aide auditd easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
+		sudo apt install -y aide auditd easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
 	elif [ "$HW" = "true" ]; then
-		apt install -y auditd apparmor-utils curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+		sudo apt install -y auditd apparmor-utils curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
 	elif [ "$VM" = "true" ]; then
 		if (dmesg | grep -q 'vmware'); then
-			apt install -y open-vm-tools-desktop
+			sudo apt install -y open-vm-tools-desktop
 		fi
-		apt install -y auditd apparmor-utils curl git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
-		snap install chromium
-		snap install firefox
-		snap install libreoffice
-		snap install vlc
+		sudo apt install -y auditd apparmor-utils curl gimp git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		sudo snap install chromium
+		sudo snap install firefox
+		sudo snap install libreoffice
+		sudo snap install vlc
 
 		# Add third party package functions from above below here
 		installPdfTools
@@ -702,58 +745,56 @@ function installPackages() {
 }
 
 function addGroups() {
-	# Applies to VM
 
 	# Monitor && log execution of this or don't enable it.
 	if (grep -q 'wireshark' /etc/group); then
 		echo "======================================================================"
-		echo -e "${BLUE}[i]${RESET}Add $UID1000 to wireshark group?"
+		echo -e "${BLUE}[i]${RESET}Add $USERNAME to wireshark group?"
 		echo ""
 		until [[ ${WIRESHARK_CHOICE} =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]: " WIRESHARK_CHOICE
 		done
 	fi
 	if [[ $WIRESHARK_CHOICE == "y" ]]; then
-		usermod -a -G wireshark "$UID1000"
+		sudo usermod -a -G wireshark "$USERNAME"
 		echo "Done."
 		sleep 1
-	elif [[ $WIRESHARK_CHOICE == "n" ]] && (groups "$UID1000" | grep -q wireshark); then
-		echo -e "${BLUE}[i]${RESET}Remove $UID1000 from wireshark group?"
+	elif [[ $WIRESHARK_CHOICE == "n" ]] && (groups "$USERNAME" | grep -q wireshark); then
+		echo -e "${BLUE}[i]${RESET}Remove $USERNAME from wireshark group?"
 		until [[ ${WIRESHARK_REMOVE} =~ ^(y|n)$ ]]; do
 			read -rp "[y/n]: " WIRESHARK_REMOVE
 		done
 
 		if [[ $WIRESHARK_REMOVE == "y" ]]; then
-			deluser "$UID1000" wireshark
+			sudo deluser "$USERNAME" wireshark
 		fi
 	fi
 
 }
 
 function removeGroups() {
-	# Applies to VM, HW, VPS
+
 	# Adjusts default user's groups to prevent non-root processes from reading system log files.
-	if (groups "$UID1000" | grep -q ' adm '); then
+	if (groups "$USERNAME" | grep -q ' adm '); then
 		echo "======================================================================"
-		echo -e "${BLUE}[i]${RESET}Removing user $UID1000 from administrative groups (adm)."
-		deluser "$UID1000" adm
+		echo -e "${BLUE}[i]${RESET}Removing user $USERNAME from administrative groups (adm)."
+		sudo deluser "$USERNAME" adm
 	fi
 }
 
 function setPostfix() {
-	# Applies to VM, HW, VPS
+
 	echo "======================================================================"
 	# Prevents the postfix service from flagging the system as degraded if it's not configured.
 	if (systemctl is-enabled postfix); then
 		echo -e "${BLUE}[-]${RESET}Disabling postfix.service.${RESET}"
-		systemctl disable postfix.service
+		sudo systemctl disable postfix.service
 	else
 		echo -e "${BLUE}[i]${RESET}postfix.service already disabled. Skipping."
 	fi
 }
 
 function setAIDE() {
-	# Applies to VPS
 
 	AIDE_MACROS=/etc/aide/aide.conf.d
 
@@ -763,7 +804,7 @@ function setAIDE() {
 	chmod -x '/etc/cron.daily/aide'
 
 	if [ "$HW" = 'true' ] && ! [ -e "$AIDE_MACROS"/31_aide_home-dirs ]; then
-		echo "!$HOME_DIR" > "$AIDE_MACROS"/31_aide_home-dirs
+		echo "!$HOME" | sudo tee "$AIDE_MACROS"/31_aide_home-dirs
 		echo -e "${GREEN}[+]${RESET}Adding AIDE policy file: $AIDE_MACROS/31_aide_home-dirs."
 	else
 		echo -e "${BLUE}[i]${RESET}AIDE policy file $AIDE_MACROS/31_aide_home-dirs already installed. Skipping."
@@ -771,52 +812,51 @@ function setAIDE() {
 }
 
 function setRkhunter() {
-	# Applies to VM, HW, VPS
 
 	RKHUNTER_CONF=/etc/rkhunter.conf
 
 	# Stops cron daily execution from altering database
 	echo "======================================================================"
 	echo -e "${BLUE}[i]${RESET}Checking rkhunter's cron.daily execution (disabled, enable manually)."
-	chmod -x '/etc/cron.daily/rkhunter'
+	sudo chmod -x '/etc/cron.daily/rkhunter'
 
 	if [ -e "$RKHUNTER_CONF" ]; then
 		if ! (grep -q -x "DISABLE_TESTS=suspscan hidden_procs deleted_files apps" "$RKHUNTER_CONF"); then
-			sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "$RKHUNTER_CONF" 
+			sudo sed -i 's/^DISABLE_TESTS=.*$/DISABLE_TESTS=suspscan hidden_procs deleted_files apps/' "$RKHUNTER_CONF" 
 			echo -e "${BLUE}[*]${RESET}Updating rkhunter test list."
 		fi
 		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/egrep" "$RKHUNTER_CONF"); then
-			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "$RKHUNTER_CONF"
+			sudo sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/egrep/SCRIPTWHITELIST=\/usr\/bin\/egrep/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (1/5)"
 		fi
 		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/fgrep" "$RKHUNTER_CONF"); then
-			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "$RKHUNTER_CONF"
+			sudo sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/fgrep/SCRIPTWHITELIST=\/usr\/bin\/fgrep/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (2/5)"
 		fi
 		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/which" "$RKHUNTER_CONF"); then
-			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF"
+			sudo sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/which/SCRIPTWHITELIST=\/usr\/bin\/which/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (3/5)"
 		fi
 		if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/ldd" "$RKHUNTER_CONF"); then
-			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF"
+			sudo sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/ldd/SCRIPTWHITELIST=\/usr\/bin\/ldd/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (4/5)"
 		fi
 		if [ "$VPS" = 'false' ]; then
 			if ! (grep -q -x "SCRIPTWHITELIST=/usr/bin/lwp-request" "$RKHUNTER_CONF"); then
-			sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF"
+			sudo sed -i 's/#SCRIPTWHITELIST=\/usr\/bin\/lwp-request/SCRIPTWHITELIST=\/usr\/bin\/lwp-request/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Updating script whitelists. (5/5)"
 			fi
 		fi
 		if ! (grep -q -x "ALLOW_SSH_PROT_V1=0" "$RKHUNTER_CONF"); then
-			sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF"
+			sudo sed -i 's/ALLOW_SSH_PROT_V1=2/ALLOW_SSH_PROT_V1=0/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Adding warning for detection of SSHv1 protocol."
 		fi
 		if ! (grep -q -x '#WEB_CMD="/bin/false"' "$RKHUNTER_CONF"); then
-			sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "$RKHUNTER_CONF"
+			sudo sed -i 's/WEB_CMD="\/bin\/false"/#WEB_CMD="\/bin\/false"/' "$RKHUNTER_CONF"
 			echo -e "${BLUE}[*]${RESET}Commenting out WEB_CMD="'"\/bin\/false"'
 		fi
 
-		rkhunter -C && echo -e "${GREEN}[+]${RESET}Reloading rkhunter profile."
+		sudo rkhunter -C && echo -e "${GREEN}[+]${RESET}Reloading rkhunter profile."
 
 	elif ! [ -e "$RKHUNTER_CONF" ]; then
 		echo -e "${RED}"'[!]'"${RESET}rkhunter.conf file not found. Skipping."
@@ -824,7 +864,6 @@ function setRkhunter() {
 }
 
 function setSSH() {
-	# Applies to VPS
 
 	SSHD_CONF='/etc/ssh/sshd_config'
 
@@ -840,7 +879,7 @@ function setSSH() {
 			if (command -v apt > /dev/null); then
 				sudo apt install -y openssh-server
 			elif (command -v dnf > /dev/null); then
-				dnf install -y openssh-server
+				sudo dnf install -y openssh-server
 			fi
 		fi
 	elif ! (systemctl is-active sshd > /dev/null); then
@@ -852,20 +891,20 @@ function setSSH() {
 		done
 		if [[ $SSHD_START_CHOICE == "y" ]]; then
 
-			systemctl start sshd
-			systemctl enable sshd
+			sudo systemctl start sshd
+			sudo systemctl enable sshd
 			echo -e "${BLUE}[+]${RESET}Starting and enabling sshd.service..."
 		fi
 	fi
 
 	if [ -e "$SSHD_CONF" ]; then
 		echo -e "${BLUE}[i]${RESET}Regenerating server host keys..."
-		rm /etc/ssh/ssh_host_*
-		ssh-keygen -A
+		sudo rm /etc/ssh/ssh_host_*
+		sudo ssh-keygen -A
 
 		echo -e "${BLUE}[i]${RESET}Updating SSHD config..."
 		if ! [ -e /etc/ssh/sshd_config.bkup ]; then
-			cp /etc/ssh/sshd_config -n /etc/ssh/sshd_config.bkup
+			sudo cp /etc/ssh/sshd_config -n /etc/ssh/sshd_config.bkup
 		fi
 
 		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
@@ -873,20 +912,20 @@ function setSSH() {
 
 		if ! (grep -Eq "^PasswordAuthentication no$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*PasswordAuthentication.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication no/g' "$SSHD_CONF"
+				sudo sed -i 's/^.*PasswordAuthentication.*$/PasswordAuthentication no/g' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PasswordAuthentication no"
 			else
-				echo "PasswordAuthentication no" >> "$SSHD_CONF"
+				echo "PasswordAuthentication no" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PasswordAuthentication no"
 			fi
 		fi
 
 		if ! (grep -Eq "^PermitRootLogin no$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*PermitRootLogin.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin no/' "$SSHD_CONF"
+				sudo sed -i 's/^.*PermitRootLogin.*$/PermitRootLogin no/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PermitRootLogin no"
 			else
-				echo "PermitRootLogin no" >> "$SSHD_CONF"
+				echo "PermitRootLogin no" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PermitRootLogin no"
 			fi
 		fi
@@ -894,30 +933,30 @@ function setSSH() {
 		# This no longer appears as an option, only referenced in /etc/rkhunter.conf
 #		if ! (grep -Eq "^Protocol 2$" "$SSHD_CONF"); then
 #			if (grep -Eq "^.*Protocol.*$" "$SSHD_CONF"); then
-#				sed -i 's/^.*Protocol.*$/&\nProtocol 2/' "$SSHD_CONF"
+#				sudo sed -i 's/^.*Protocol.*$/&\nProtocol 2/' "$SSHD_CONF"
 #				echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
 #			else
-#				echo "Protocol 2" >> "$SSHD_CONF"
+#				echo "Protocol 2" | sudo tee -a "$SSHD_CONF"
 #				echo -e "${GREEN}[+]${RESET}Prohibiting SSHv1 protocol."
 #			fi
 #		fi
 
 		if ! (grep -Eq "^PermitEmptyPasswords no$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*PermitEmptyPasswords.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*PermitEmptyPasswords.*$/PermitEmptyPasswords no/' "$SSHD_CONF"
+				sudo sed -i 's/^.*PermitEmptyPasswords.*$/PermitEmptyPasswords no/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PermitEmptyPasswords no"
 			else
-				echo "PermitEmptyPasswords no" >> "$SSHD_CONF"
+				echo "PermitEmptyPasswords no" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PermitEmptyPasswords no"
 			fi
 		fi
 
 		if ! (grep -Eq "^AllowAgentForwarding no$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*AllowAgentForwarding.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*AllowAgentForwarding.*$/AllowAgentForwarding no/' "$SSHD_CONF"
+				sudo sed -i 's/^.*AllowAgentForwarding.*$/AllowAgentForwarding no/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: AllowAgentForwarding no"
 			else
-				echo "AllowAgentForwarding no" >> "$SSHD_CONF"
+				echo "AllowAgentForwarding no" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: AllowAgentForwarding no"
 			fi
 		fi
@@ -925,10 +964,10 @@ function setSSH() {
 		# 600=10 minutes
 		if ! (grep -Eq "^ClientAliveInterval 300$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*ClientAliveInterval.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*ClientAliveInterval.*$/ClientAliveInterval 300/' "$SSHD_CONF"
+				sudo sed -i 's/^.*ClientAliveInterval.*$/ClientAliveInterval 300/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveInterval 300"
 			else
-				echo "ClientAliveInterval 300" >> "$SSHD_CONF"
+				echo "ClientAliveInterval 300" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveInterval 300"
 			fi
 		fi
@@ -936,10 +975,10 @@ function setSSH() {
 		# set 0 for ClientAliveInterval to be exact
 		if ! (grep -Eq "^ClientAliveCountMax 0$" "$SSHD_CONF"); then
 			if ( grep -Eq "^.*ClientAliveCountMax.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*ClientAliveCountMax.*$/ClientAliveCountMax 0/' "$SSHD_CONF"
+				sudo sed -i 's/^.*ClientAliveCountMax.*$/ClientAliveCountMax 0/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
 			else
-				echo "ClientAliveCountMax 0" >> "$SSHD_CONF"
+				echo "ClientAliveCountMax 0" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
 			fi
 		fi
@@ -949,10 +988,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_disable_host_auth
 		if ! (grep -Eq "^HostbasedAuthentication no$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*HostbasedAuthentication.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*HostbasedAuthentication.*$/HostbasedAuthentication no/' "$SSHD_CONF"
+				sudo sed -i 's/^.*HostbasedAuthentication.*$/HostbasedAuthentication no/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: HostbasedAuthentication no"
 			else
-				echo "HostbasedAuthentication no" >> "$SSHD_CONF"
+				echo "HostbasedAuthentication no" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: HostbasedAuthentication no"
 			fi
 		fi
@@ -961,10 +1000,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_disable_rhosts
 		if ! (grep -Eq "^IgnoreRhosts yes$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*IgnoreRhosts.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*IgnoreRhosts.*$/IgnoreRhosts yes/' "$SSHD_CONF"
+				sudo sed -i 's/^.*IgnoreRhosts.*$/IgnoreRhosts yes/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: IgnoreRhosts yes"
 			else
-				echo "IgnoreRhosts yes" >> "$SSHD_CONF"
+				echo "IgnoreRhosts yes" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: IgnoreRhosts yes"
 			fi
 		fi
@@ -973,10 +1012,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_do_not_permit_user_env
 		if ! (grep -Eq "^PermitUserEnvironment no$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*PermitUserEnvironment.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*PermitUserEnvironment.*$/PermitUserEnvironment no/' "$SSHD_CONF"
+				sudo sed -i 's/^.*PermitUserEnvironment.*$/PermitUserEnvironment no/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PermitUserEnvironment no"
 			else
-				echo "PermitUserEnvironment no" >> "$SSHD_CONF"
+				echo "PermitUserEnvironment no" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: PermitUserEnvironment no"
 			fi
 		fi
@@ -985,10 +1024,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_set_loglevel_info
 		if ! (grep -Eq "^LogLevel INFO$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*LogLevel INFO.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*LogLevel INFO.*$/LogLevel INFO/' "$SSHD_CONF"
+				sudo sed -i 's/^.*LogLevel INFO.*$/LogLevel INFO/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: LogLevel INFO"
 			else
-				echo "LogLevel INFO" >> "$SSHD_CONF"
+				echo "LogLevel INFO" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: LogLevel INFO"
 			fi
 		fi
@@ -997,10 +1036,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_set_max_auth_tries
 		if ! (grep -Eq "^MaxAuthTries 4$" "$SSHD_CONF"); then
 			if (grep -Eq "^.*MaxAuthTries.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*MaxAuthTries.*$/MaxAuthTries 4/' "$SSHD_CONF"
+				sudo sed -i 's/^.*MaxAuthTries.*$/MaxAuthTries 4/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: MaxAuthTries 4"
 			else
-				echo "MaxAuthTries 4" >> "$SSHD_CONF"
+				echo "MaxAuthTries 4" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: MaxAuthTries 4"
 			fi
 		fi
@@ -1009,10 +1048,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_disable_x11_forwarding
 		if ! (grep -Eq "^X11Forwarding no$" "$SSHD_CONF"); then
 			if ( grep -Eq "^.*X11Forwarding.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*X11Forwarding.*$/X11Forwarding no/' "$SSHD_CONF"
+				sudo sed -i 's/^.*X11Forwarding.*$/X11Forwarding no/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: X11Forwarding no"
 			else
-				echo "X11Forwarding no" >> "$SSHD_CONF"
+				echo "X11Forwarding no" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: X11Forwarding no"
 			fi
 		fi
@@ -1021,10 +1060,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_use_approved_ciphers_ordered_stig
 		if ! (grep -Eq "^Ciphers aes256-ctr,aes192-ctr,aes128-ctr$" "$SSHD_CONF"); then
 			if ( grep -Eq "^(#Ciphers|Ciphers).*$" "$SSHD_CONF"); then
-				sed -i 's/^.*Ciphers.*$/Ciphers aes256-ctr,aes192-ctr,aes128-ctr/' "$SSHD_CONF"
+				sudo sed -i 's/^.*Ciphers.*$/Ciphers aes256-ctr,aes192-ctr,aes128-ctr/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: Ciphers aes256-ctr,aes192-ctr,aes128-ctr"
 			else
-				echo "Ciphers aes256-ctr,aes192-ctr,aes128-ctr" >> "$SSHD_CONF"
+				echo "Ciphers aes256-ctr,aes192-ctr,aes128-ctr" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: Ciphers aes256-ctr,aes192-ctr,aes128-ctr"
 			fi
 		fi
@@ -1033,10 +1072,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_use_approved_macs_ordered_stig
 		if ! (grep -Eq "^MACs hmac-sha2-512,hmac-sha2-256$" "$SSHD_CONF"); then
 			if ( grep -Eq "^(MACs|#MACs).*$" "$SSHD_CONF"); then
-				sed -i 's/^.*MACs.*$/MACs hmac-sha2-512,hmac-sha2-256/' "$SSHD_CONF"
+				sudo sed -i 's/^.*MACs.*$/MACs hmac-sha2-512,hmac-sha2-256/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: MACs hmac-sha2-512,hmac-sha2-256"
 			else
-				echo "MACs hmac-sha2-512,hmac-sha2-256" >> "$SSHD_CONF"
+				echo "MACs hmac-sha2-512,hmac-sha2-256" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: MACs hmac-sha2-512,hmac-sha2-256"
 			fi
 		fi
@@ -1045,10 +1084,10 @@ function setSSH() {
 		# xccdf_org.ssgproject.content_rule_sshd_x11_use_localhost
 		if ! (grep -Eq "^X11UseLocalhost yes$" "$SSHD_CONF"); then
 			if (grep -Eq ".*X11UseLocalhost.*$" "$SSHD_CONF"); then
-				sed -i 's/^.*X11UseLocalhost.*$/X11UseLocalhost yes/' "$SSHD_CONF"
+				sudo sed -i 's/^.*X11UseLocalhost.*$/X11UseLocalhost yes/' "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: X11UseLocalhost yes"
 			else
-				echo "X11UseLocalhost yes" >> "$SSHD_CONF"
+				echo "X11UseLocalhost yes" | sudo tee -a "$SSHD_CONF"
 				echo -e "${GREEN}[+]${RESET}Setting: X11UseLocalhost yes"
 			fi
 		fi
@@ -1076,7 +1115,7 @@ function setSSH() {
 			;;
 		esac
 
-		sed -i 's/.*Port .*$/Port '"${PORT}"'/' "$SSHD_CONF"
+		sudo sed -i 's/.*Port .*$/Port '"${PORT}"'/' "$SSHD_CONF"
 
 		echo ""
 		if (command -v iptables > /dev/null); then
@@ -1091,14 +1130,14 @@ function setSSH() {
 				read -rp "[y/n]: " IPTABLES_CHOICE
 			done
 			if [[ $IPTABLES_CHOICE == "y" ]]; then
-				iptables -A INPUT -i "$PUB_NIC" -p tcp -m tcp --dport "$PORT" -j ACCEPT
-				ip6tables -A INPUT -i "$PUB_NIC" -p tcp -m tcp --dport "$PORT" -j ACCEPT
+				sudo iptables -A INPUT -i "$PUB_NIC" -p tcp -m tcp --dport "$PORT" -j ACCEPT
+				sudo ip6tables -A INPUT -i "$PUB_NIC" -p tcp -m tcp --dport "$PORT" -j ACCEPT
 			elif [[ $IPTABLES_CHOICE == "n" ]]; then
 				if (command -v ufw > /dev/null); then
-					ufw allow in on "$PUB_NIC" to any proto tcp port "$PORT" comment 'ssh'
+					sudo ufw allow in on "$PUB_NIC" to any proto tcp port "$PORT" comment 'ssh'
 					echo -e "${GREEN}[+]${RESET}Added ufw rules for SSH port ${PORT}."
 				elif (command -v firewall-cmd > /dev/null); then
-					firewall-cmd --add-port="$SSH_PORT"/tcp
+					sudo firewall-cmd --add-port="$SSH_PORT"/tcp
 					echo -e "${GREEN}[+]${RESET}Added firewall-cmd rules for SSH port ${PORT}."
 				fi
 			fi
@@ -1117,7 +1156,7 @@ function setSSH() {
 		done
 		if [[ $SSHD_RESTART_CHOICE == "y" ]]; then
 
-			systemctl restart sshd.service
+			sudo systemctl restart sshd.service
 			echo -e "${BLUE}[+]${RESET}Restarting sshd.service..."
 		fi
 
@@ -1136,49 +1175,58 @@ function setMFA() {
 	PAM_GDM='/etc/pam.d/gdm-password'
 	PAM_SSHD='/etc/pam.d/sshd'
 
-	if ! (command -v google-authenticator > /dev/null); then
-		apt install -y libpam-google-authenticator
-	fi
-
 	echo -e "${BLUE}[?]Configure libpam-google-authenticator for MFA login?${RESET}"
+	if [ -e "$HOME"/.google_authenticator ]; then
+		echo -e "${YELLOW}[i]${RESET}A $HOME/.google_authenticator already exists."
+	fi
 	echo ""
 	until [[ $MFA_CHOICE =~ ^(y|n)$ ]]; do
 		read -rp "[y/n]: " MFA_CHOICE
 	done
 	if [[ $MFA_CHOICE == "y" ]]; then
+
+		# Install libpam-google-authenticator if it's missing
+		if ! (command -v google-authenticator > /dev/null); then
+			sudo apt install -y libpam-google-authenticator
+		fi
+
+		# Check if this machine is running an OpenSSH server
 		if [ -e "$SSHD_CONF" ]; then
 	                if ! (grep -Eq "^ChallengeResponseAuthentication = yes$" "$SSHD_CONF"); then
 	                        if (grep -Eq "^.*ChallengeResponseAuthentication.*$" "$SSHD_CONF"); then
-	                                sed -i 's/^.*ChallengeResponseAuthentication.*$/ChallengeResponseAuthentication = yes/' "$SSHD_CONF"
+	                                sudo sed -i 's/^.*ChallengeResponseAuthentication.*$/ChallengeResponseAuthentication = yes/' "$SSHD_CONF"
 	                                echo -e "${GREEN}[+]${RESET}Setting: ChallengeResponseAuthentication = yes"
 	                        else
-	                                echo "ChallengeResponseAuthentication = yes" >> "$SSHD_CONF"
+	                                echo "ChallengeResponseAuthentication = yes" | sudo tee -a "$SSHD_CONF"
 	                                echo -e "${GREEN}[+]${RESET}Setting: ChallengeResponseAuthentication = yes"
 	                        fi
 	                fi
-			echo '# libpam-google-authenticator 2fa
-auth required pam_google_authenticator.so no_increment_hotp nullok' >> "$PAM_SSHD"
+	                if ! (grep -Eq "^auth required pam_google_authenticator.so no_increment_hotp nullok$" "$PAM_SSHD"); then
+				echo '# libpam-google-authenticator 2fa
+auth required pam_google_authenticator.so no_increment_hotp nullok' | sudo tee -a "$PAM_SSHD"
+			fi
 
-			systemctl restart sshd
+			sudo systemctl restart sshd
 		fi
+
+		# If this isn't a headless server, add MFA to desktop login as well.
 		if ! [[ $VPS == 'true' ]]; then
-			if ! (grep -Eq "^uth required pam_google_authenticator.so no_increment_hotp nullok$" "$PAM_LOGIN"); then
+			if ! (grep -Eq "^auth required pam_google_authenticator.so no_increment_hotp nullok$" "$PAM_LOGIN"); then
 				echo '# libpam-google-authenticator 2fa
-auth required pam_google_authenticator.so no_increment_hotp nullok' >> "$PAM_LOGIN"
+auth required pam_google_authenticator.so no_increment_hotp nullok' | sudo tee -a "$PAM_LOGIN"
 		fi
-			if ! (grep -Eq "^uth required pam_google_authenticator.so no_increment_hotp nullok$" "$PAM_GDM"); then
+			if ! (grep -Eq "^auth required pam_google_authenticator.so no_increment_hotp nullok$" "$PAM_GDM"); then
 				echo '# libpam-google-authenticator 2fa
-auth required pam_google_authenticator.so no_increment_hotp nullok' >> "$PAM_GDM"
+auth required pam_google_authenticator.so no_increment_hotp nullok' | sudo tee -a "$PAM_GDM"
 			fi
 		fi
 
-		pkexec --user "$UID1000" google-authenticator
+		google-authenticator
 
 	fi
 }
 
 function blockKmods() {
-	# Applies to HW
 
 	function blockFirewire() {
 
@@ -1192,7 +1240,7 @@ blacklist video1394
 
 blacklist firewire-ohci
 blacklist firewire-sbp2
-blacklist firewire-core" >'/etc/modprobe.d/blacklist-firewire.conf'
+blacklist firewire-core" | sudo tee '/etc/modprobe.d/blacklist-firewire.conf'
 
 	}
 
@@ -1203,10 +1251,10 @@ blacklist firewire-core" >'/etc/modprobe.d/blacklist-firewire.conf'
 			echo -e "${YELLOW}"'[!]'"${RESET}Only /etc/modprobe.d/blacklist-firewire.conf will be updated."
 
 		else
-			touch '/etc/modprobe.d/blacklist-thunderbolt.conf'
+			sudo touch '/etc/modprobe.d/blacklist-thunderbolt.conf'
 			echo "# Disable Thunderbolt ports. Comment to enable
 
-	blacklist thunderbolt" >'/etc/modprobe.d/blacklist-thunderbolt.conf'
+blacklist thunderbolt" | sudo tee '/etc/modprobe.d/blacklist-thunderbolt.conf'
 		fi
 	}
 
@@ -1227,7 +1275,7 @@ blacklist firewire-core" >'/etc/modprobe.d/blacklist-firewire.conf'
 			blockFirewire
 			echo -e "${BLUE}[i]${RESET}Creating /etc/modprobe.d/blacklist-thunderbolt.conf"
 			blockThunderbolt
-			update-initramfs -k all -u
+			sudo update-initramfs -k all -u
 			echo -e "${GREEN}[+]${RESET}Done."
 			echo ""
 		else
@@ -1238,7 +1286,7 @@ blacklist firewire-core" >'/etc/modprobe.d/blacklist-firewire.conf'
 		# Reset the configurations back to their defaults
 		if [ -e '/etc/modprobe.d/blacklist-thunderbolt.conf' ]; then
 			echo -e "${BLUE}[-]${RESET}Removing /etc/modprobe.d/blacklist-thunderbolt.conf"
-			rm '/etc/modprobe.d/blacklist-thunderbolt.conf'
+			sudo rm '/etc/modprobe.d/blacklist-thunderbolt.conf'
 			echo -e "${BLUE}[-]${RESET}Resetting /etc/modprobe.d/blacklist-firewire.conf"
 			echo "# Select the legacy firewire stack over the new CONFIG_FIREWIRE one.
 
@@ -1249,9 +1297,9 @@ blacklist raw1394
 blacklist video1394
 
 #blacklist firewire-ohci
-#blacklist firewire-sbp2" >'/etc/modprobe.d/blacklist-firewire.conf'
+#blacklist firewire-sbp2" | sudo tee '/etc/modprobe.d/blacklist-firewire.conf'
 
-			update-initramfs -k all -u
+			sudo update-initramfs -k all -u
 
 		fi
 
@@ -1290,23 +1338,23 @@ function setLockdown() {
 				if grep -q '^.*lockdown=.*'  "$KERNEL_CMDLINE" ; then
 					# modify the GRUB command-line if a lockdown= arg already exists
 					# note no space between `\1` and `lockdown=`
-					sed -i 's/\(^.*\)lockdown=[^[:space:]]*\(.*\)/\1lockdown='"$LOCKDOWN_MODE"' \2/'  "$KERNEL_CMDLINE"
+					sudo sed -i 's/\(^.*\)lockdown=[^[:space:]]*\(.*\)/\1lockdown='"$LOCKDOWN_MODE"' \2/'  "$KERNEL_CMDLINE"
 				else 
 					# no lockdown=arg is present, append it
 					# note the additional space between `\1` and `lockdown=`
-					sed -i 's/\(^.*\)/\1 lockdown='"$LOCKDOWN_MODE"'/'  "$KERNEL_CMDLINE"
+					sudo sed -i 's/\(^.*\)/\1 lockdown='"$LOCKDOWN_MODE"'/'  "$KERNEL_CMDLINE"
 				fi
 			# Otherwise default back to location to edit kernel commandline parameters on Ubuntu
 			elif [ -e /etc/default/grub ]; then
 				KERNEL_CMDLINE=/etc/default/grub
 				if grep -q '^GRUB_CMDLINE_LINUX=.*lockdown=.*"'  "$KERNEL_CMDLINE" ; then
 					# modify the GRUB command-line if a lockdown= arg already exists
-					sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)lockdown=[^[:space:]]*\(.*"\)/\1 lockdown='"$LOCKDOWN_MODE"' \2/'  "$KERNEL_CMDLINE"
+					sudo sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)lockdown=[^[:space:]]*\(.*"\)/\1 lockdown='"$LOCKDOWN_MODE"' \2/'  "$KERNEL_CMDLINE"
 				else
 					# no lockdown=arg is present, append it
-					sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)"/\1 lockdown='"$LOCKDOWN_MODE"'"/'  "$KERNEL_CMDLINE"
+					sudo sed -i 's/\(^GRUB_CMDLINE_LINUX=".*\)"/\1 lockdown='"$LOCKDOWN_MODE"'"/'  "$KERNEL_CMDLINE"
 				fi
-				update-grub
+				sudo update-grub
 			else
 				KERNEL_CMDLINE='null'
 				echo -e "${YELLOW}[i]${RESET}Can't find a configuration file to enable lockdown. Skipping..."
@@ -1323,8 +1371,8 @@ function setLockdown() {
 }
 
 function setGnupg() {
-	# Applies to VM,HW
-	if ! [ -e "$HOME_DIR"/.gnupg/gpg.conf ]; then
+
+	if ! [ -e "$HOME"/.gnupg/gpg.conf ]; then
 		echo "======================================================================"
 		echo -e "${BLUE}[i]${RESET}GnuPG"
 		echo "Harden gpg.conf and add smart card support for ssh to .bashrc file?"
@@ -1352,34 +1400,30 @@ with-fingerprint
 require-cross-certification
 no-symkey-cache
 use-agent
-throw-keyids" >"$HOME_DIR"/.gnupg/gpg.conf
+throw-keyids" | tee "$HOME"/.gnupg/gpg.conf
 
 			# Adjustment for 18.04
 			if [[ $MAJOR_UBUNTU_VERSION -eq 18 ]]; then
-				sed -i 's/^no-symkey-cache$//' "$HOME_DIR"/.gnupg/gpg.conf
+				sed -i 's/^no-symkey-cache$//' "$HOME"/.gnupg/gpg.conf
 			fi
 
 			echo "enable-ssh-support
 default-cache-ttl 60
 max-cache-ttl 120
-pinentry-program /usr/bin/pinentry-curses" >"$HOME_DIR"/.gnupg/gpg-agent.conf
+pinentry-program /usr/bin/pinentry-curses" | tee "$HOME"/.gnupg/gpg-agent.conf
 
-			if ! (grep -qx '# enable gpg smart card support for ssh' "$HOME_DIR"/.bashrc); then
+			if ! (grep -qx '# enable gpg smart card support for ssh' "$HOME"/.bashrc); then
 				echo '
 # enable gpg smart card support for ssh
 export GPG_TTY="$(tty)"
 export SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)
-gpgconf --launch gpg-agent' >>"$HOME_DIR"/.bashrc
+gpgconf --launch gpg-agent' | tee -a "$HOME"/.bashrc
 			fi
-
-			chown -R "$UID1000":"$UID1000" "$HOME_DIR"/.gnupg/gpg*
-
 		fi
 	fi
 }
 
 function checkAppArmor() {
-	# Applies to VM,HW,VPS
 
 	AA_FIREFOX=/etc/apparmor.d/usr.bin.firefox
 	AA_FIREFOX_LOCAL=/etc/apparmor.d/local/usr.bin.firefox
@@ -1390,7 +1434,7 @@ function checkAppArmor() {
 
 	if (command -v firefox | grep -Eq "^/usr/bin/firefox$"); then
 		if [ -e "/etc/apparmor.d/disable/usr.bin.firefox" ]; then
-		    rm /etc/apparmor.d/disable/usr.bin.firefox
+		    sudo rm /etc/apparmor.d/disable/usr.bin.firefox
 		fi
 
 		echo "# Site-specific additions and overrides for usr.bin.firefox.
@@ -1404,18 +1448,18 @@ function checkAppArmor() {
   deny @{HOME}/snap/ r, 
   deny /boot/ r,
   deny /opt/ r,
-  deny /snap/ r," >"$AA_FIREFOX_LOCAL"
+  deny /snap/ r," | sudo tee "$AA_FIREFOX_LOCAL"
 
-		apparmor_parser -r "$AA_FIREFOX"
+		sudo apparmor_parser -r "$AA_FIREFOX"
 	fi
 
 	echo -e "${BLUE}[i]${RESET}Done."
 }
 
 function CleanUp() {
-	# CleanUp
+
 	if [ -e "$SETUPDIR" ]; then
-		rm -rf "$SETUPDIR"
+		sudo rm -rf "$SETUPDIR"
 	fi
 }
 
@@ -1513,7 +1557,7 @@ function installHW() {
 	setLockdown
 	setGnupg
 	#checkAppArmor
-	#CleanUp
+	CleanUp
 }
 
 function installVPS() {
@@ -1546,7 +1590,7 @@ function installVPS() {
 	setLockdown
 	#setGnupg
 	#checkAppArmor
-	#CleanUp
+	CleanUp
 }
 
 manageMenu
