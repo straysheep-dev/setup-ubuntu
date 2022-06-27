@@ -59,7 +59,7 @@ checkHostname
 function checkOS() {
 
 	# Check desktop type
-	DESKTOP="$(echo $XDG_CURRENT_DESKTOP | cut -d ':' -f2)"
+	DESKTOP="$(echo "$XDG_CURRENT_DESKTOP" | cut -d ':' -f2)"
 	echo -e "${BLUE}[i]$DESKTOP desktop environment detected${RESET}"
 
 	# Check OS version
@@ -723,20 +723,95 @@ function installPackages() {
 
 	echo -e ""
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
+
 	if [ "$VPS" = "true" ]; then
 		sudo apt install -y aide auditd easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
+
 	elif [ "$HW" = "true" ]; then
-		sudo apt install -y auditd apparmor-utils curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+		if (command -v snap > /dev/null); then
+			sudo apt autoremove --purge -y eog gedit
+			if (sudo snap install eog); then
+				sudo snap connect eog:removeable-media
+				sudo snap disconnect eog:network
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect eog:x11
+				fi
+			fi
+
+			if (sudo snap install gedit); then
+				sudo snap connect gedit:removeable-media
+				sudo snap disconnect gedit:cups-control
+				sudo snap disconnect gedit:network
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect gedit:x11
+				fi
+			fi
+		fi
+		sudo apt install -y aide auditd apparmor-utils curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+
 	elif [ "$VM" = "true" ]; then
 		if (dmesg | grep -q 'vmware'); then
 			sudo apt install -y open-vm-tools-desktop
 		fi
-		sudo apt install -y auditd apparmor-utils curl gimp git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
-		sudo snap install chromium
-		sudo snap install firefox
-		sudo snap install libreoffice
-		sudo snap install vlc
+		sudo apt install -y aide auditd apparmor-utils curl gimp git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		if (command -v snap > /dev/null); then
+			sudo apt autoremove --purge -y eog gedit
 
+			if (sudo snap install chromium); then
+				sudo snap disconnect chromium:bluez
+				sudo snap disconnect chromium:cups-control
+				sudo snap disconnect chromium:removeable-media
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect chromium:x11
+				fi
+			fi
+
+			if (sudo snap install eog); then
+				sudo snap connect eog:removeable-media
+				sudo snap disconnect eog:network
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect eog:x11
+				fi
+			fi
+
+			if (sudo snap install firefox); then
+				sudo snap disconnect firefox:cups-control
+				sudo snap disconnect firefox:removeable-media
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect firefox:x11
+				fi
+			fi
+
+			if (sudo snap install gedit); then
+				sudo snap connect gedit:removeable-media
+				sudo snap disconnect gedit:cups-control
+				sudo snap disconnect gedit:network
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect gedit:x11
+				fi
+			fi
+
+			if (sudo snap install libreoffice); then
+				sudo snap connect libreoffice:removeable-media
+				sudo snap disconnect libreoffice:bluez
+				sudo snap disconnect libreoffice:network
+				sudo snap disconnect libreoffice:network-bind
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect libreoffice:x11
+				fi
+			fi
+
+			if (sudo snap install vlc); then
+				sudo snap connect vlc:removeable-media
+				sudo snap disconnect vlc:avahi-control
+				sudo snap disconnect vlc:network
+				sudo snap disconnect vlc:network-bind
+				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+					sudo snap disconnect vlc:x11
+				fi
+			fi
+
+		fi
 		# Add third party package functions from above below here
 		installPdfTools
 	fi
