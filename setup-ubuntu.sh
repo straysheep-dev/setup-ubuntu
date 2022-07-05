@@ -731,7 +731,7 @@ function installPackages() {
 		if (command -v snap > /dev/null); then
 			sudo apt autoremove --purge -y eog gedit
 			if (sudo snap install eog); then
-				sudo snap connect eog:removeable-media
+				sudo snap connect eog:removable-media
 				sudo snap disconnect eog:network
 				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
 					sudo snap disconnect eog:x11
@@ -739,7 +739,7 @@ function installPackages() {
 			fi
 
 			if (sudo snap install gedit); then
-				sudo snap connect gedit:removeable-media
+				sudo snap connect gedit:removable-media
 				sudo snap disconnect gedit:cups-control
 				sudo snap disconnect gedit:network
 				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
@@ -760,14 +760,14 @@ function installPackages() {
 			if (sudo snap install chromium); then
 				sudo snap disconnect chromium:bluez
 				sudo snap disconnect chromium:cups-control
-				sudo snap disconnect chromium:removeable-media
+				sudo snap disconnect chromium:removable-media
 				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
 					sudo snap disconnect chromium:x11
 				fi
 			fi
 
 			if (sudo snap install eog); then
-				sudo snap connect eog:removeable-media
+				sudo snap connect eog:removable-media
 				sudo snap disconnect eog:network
 				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
 					sudo snap disconnect eog:x11
@@ -776,14 +776,14 @@ function installPackages() {
 
 			if (sudo snap install firefox); then
 				sudo snap disconnect firefox:cups-control
-				sudo snap disconnect firefox:removeable-media
+				sudo snap disconnect firefox:removable-media
 				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
 					sudo snap disconnect firefox:x11
 				fi
 			fi
 
 			if (sudo snap install gedit); then
-				sudo snap connect gedit:removeable-media
+				sudo snap connect gedit:removable-media
 				sudo snap disconnect gedit:cups-control
 				sudo snap disconnect gedit:network
 				if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
@@ -792,7 +792,7 @@ function installPackages() {
 			fi
 
 			if (sudo snap install libreoffice); then
-				sudo snap connect libreoffice:removeable-media
+				sudo snap connect libreoffice:removable-media
 				sudo snap disconnect libreoffice:bluez
 				sudo snap disconnect libreoffice:network
 				sudo snap disconnect libreoffice:network-bind
@@ -802,7 +802,7 @@ function installPackages() {
 			fi
 
 			if (sudo snap install vlc); then
-				sudo snap connect vlc:removeable-media
+				sudo snap connect vlc:removable-media
 				sudo snap disconnect vlc:avahi-control
 				sudo snap disconnect vlc:network
 				sudo snap disconnect vlc:network-bind
