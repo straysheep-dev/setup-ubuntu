@@ -3,13 +3,16 @@
 # This is a post install script for an Ubuntu 18.04 or later workstation, vm, or server.
 # The goal is to provide a minimal and hardened baseline environment with auditing capability
 
-# Thanks to the following projects for code and inspiration:
+# Thanks to the following projects for code, ideas, and guidance:
 # https://github.com/Disassembler0/Win10-Initial-Setup-Script
 # https://github.com/g0tmi1k/OS-Scripts
-# https://github.com/bfuzzy1/auditd-attack
 # https://github.com/angristan/wireguard-install
+# https://github.com/drduh/YubiKey-Guide
+# https://github.com/drduh/config
+# https://static.open-scap.org/ssg-guides/ssg-ubuntu2004-guide-stig.html
+# https://github.com/ComplianceAsCode/content
 
-# Vars
+
 
 RED="\033[01;31m"      # Errors
 GREEN="\033[01;32m"    # Success
@@ -27,7 +30,7 @@ VM='false'
 HW='false'
 VPS='false'
 
-# Start
+
 
 function isRoot() {
 	if [ "${EUID}" -eq 0 ]; then
@@ -1446,6 +1449,14 @@ function setLockdown() {
 }
 
 function setGnupg() {
+
+	# https://github.com/drduh/YubiKey-Guide#harden-configuration
+	# https://github.com/drduh/config/blob/master/gpg.conf
+
+	# https://github.com/drduh/YubiKey-Guide#create-configuration
+	# https://github.com/drduh/config/blob/master/gpg-agent.conf
+
+	# https://github.com/drduh/YubiKey-Guide#replace-agents
 
 	if ! [ -e "$HOME"/.gnupg/gpg.conf ]; then
 		echo "======================================================================"
