@@ -12,8 +12,6 @@
 # https://static.open-scap.org/ssg-guides/ssg-ubuntu2004-guide-stig.html
 # https://github.com/ComplianceAsCode/content
 
-
-
 RED="\033[01;31m"      # Errors
 GREEN="\033[01;32m"    # Success
 YELLOW="\033[01;33m"   # Warnings
@@ -357,6 +355,16 @@ function stopServices() {
 		sudo systemctl disable avahi-daemon
 		sudo systemctl mask avahi-daemon
 	fi
+	# bluetooth
+	echo -e "${BLUE}[i]${RESET}Checking service: bluetooth..."
+	if (systemctl is-active bluetooth); then
+		sudo systemctl stop bluetooth
+	fi
+	if (systemctl is-enabled bluetooth); then
+		sudo systemctl disable bluetooth
+		sudo systemctl mask bluetooth
+	fi
+
 	echo -e "${BLUE}[i]${RESET}All non-essential services stopped and disabled."
 }
 
@@ -485,7 +493,7 @@ function setFirewall() {
 			sudo ufw default deny incoming
 			sudo ufw default allow outgoing
 			sudo ufw default deny routed
-			
+
 			if [ -e /etc/ssh/sshd_config ]; then
 				if ! [[ "$SERVER_SSH_PORT" == "" ]];then
 					sudo ufw allow in port "$SERVER_SSH_PORT" proto tcp comment 'ssh'
@@ -500,7 +508,7 @@ function setFirewall() {
 
 			sudo ip6tables -F    # Flush all chains
 			sudo ip6tables -X    # Delete all user-defined chains
-			
+
 			sudo iptables -P INPUT DROP
 			sudo iptables -P FORWARD DROP
 			sudo iptables -P OUTPUT ACCEPT
@@ -722,6 +730,91 @@ function installPdfTools() {
 
 }
 
+function System76PPA() {
+
+	# https://eclypsium.com/2022/07/26/firmware-security-realizations-part-1-secure-boot-and-dbx/
+	if ! (grep -qx 'System76' /sys/devices/virtual/dmi/id/sys_vendor); then
+		return
+	fi
+
+	echo -e "${GREEN}[i]Adding System76 drivers...${RESET}"
+
+	# https://support.system76.com/articles/system76-driver
+
+	echo 'Package: *
+Pin: release o=LP-PPA-system76-dev-stable
+Pin-Priority: 1001
+
+Package: *
+Pin: release o=LP-PPA-system76-dev-pre-stable
+Pin-Priority: 1001' | sudo tee /etc/apt/preferences.d/system76-apt-preferences
+
+	sudo apt-add-repository -y ppa:system76-dev/stable
+
+	if ! (gpg /etc/apt/trusted.gpg.d/system76-dev_ubuntu_stable.gpg | grep '5D1F 3A80 254F 6AFB A254  FED5 ACD4 42D1 C8B7 748B'); then
+		echo -e "${RED}[i]System76 signing key has an unexpected fingerprint.${RESET}"
+		return 1
+	else
+		echo -e "[${GREEN}OK${RESET}]"
+
+	fi 2>/dev/null
+
+	sudo apt-get update
+	sudo apt install system76-driver
+
+	if (lsmod | grep -q 'nvidia'); then
+		sudo apt install system76-driver-nvidia
+	fi
+
+}
+
+function installFlatpak() {
+
+	echo -e "${GREEN}[i]Adding Flatpak...${RESET}"
+
+	sudo apt install -y flatpak
+
+	# Note: the Software Center app on Ubuntu 20.04 and later is distributed as a snap package, 'snap-store'
+
+	# This means following the next step and Installing gnome-software-plugin-flatpak will also install the deb
+	# version of the Software Center 'gnome-software' effectively a duplicate not confined by snap.
+	# The 'snap-store' does not currently support installing flatpaks via the GUI, so the CLI is used instead.
+
+	# optional step:
+#	sudo apt install gnome-software-plugin-flatpak
+
+	sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+	# Also not a bad idea to add the collection ID to this remote for creating offline versions of installed apps for backup:
+	sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub
+
+	if ! (gpg /var/lib/flatpak/repo/flathub.trustedkeys.gpg 2>/dev/null | grep -q '6E5C 05D9 79C7 6DAF 93C0  8135 4184 DD4D 907A 7CAE' > /dev/null); then
+		echo -e "${RED}[i]Flatpak signing key has an unexpected fingerprint.${RESET}"
+	fi
+
+	echo -e "${BLUE}[i]Applying a strict global override policy for all flatpaks...${RESET}"
+
+	# The overrides/ folder does not exist by default and must be created.
+	sudo mkdir -p /var/lib/flatpak/overrides/
+
+	echo '[Context]
+filesystems=!host;
+shared=!network;!ipc;' | sudo tee /var/lib/flatpak/overrides/global
+
+	# Consider adding sockets=!x11;!fallback-x11 for systems running only wayland
+	if ! [ "$XDG_SESSION_TYPE" == "x11" ]; then
+		echo 'sockets=!x11;!fallback-x11;
+' | sudo tee -a /var/lib/flatpak/overrides/global
+	fi
+
+	echo '[Session Bus Policy]
+org.gtk.vfs.*=none
+org.gtk.vfs=none' | sudo tee -a /var/lib/flatpak/overrides/global
+
+	echo -e "${YELLOW}[i]Reboot before using Flatpak${RESET}"
+
+}
+
 function installPackages() {
 
 	echo -e ""
@@ -751,9 +844,11 @@ function installPackages() {
 			fi
 		fi
 		sudo apt install -y aide auditd apparmor-utils curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+		System76PPA
+		installFlatpak
 
 	elif [ "$VM" = "true" ]; then
-		if (dmesg | grep -q 'vmware'); then
+		if (sudo dmesg | grep -q 'vmware'); then
 			sudo apt install -y open-vm-tools-desktop
 		fi
 		sudo apt install -y aide auditd apparmor-utils curl gimp git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
@@ -817,6 +912,7 @@ function installPackages() {
 		fi
 		# Add third party package functions from above below here
 		installPdfTools
+		installFlatpak
 	fi
 	echo -e "${BLUE}[+]${RESET}All essential packages installed.${RESET}"
 	sleep 1
@@ -1060,7 +1156,6 @@ function setSSH() {
 				echo -e "${GREEN}[+]${RESET}Setting: ClientAliveCountMax 0"
 			fi
 		fi
-
 
 		# https://static.open-scap.org/ssg-guides/ssg-ubuntu1804-guide-cis.html
 		# xccdf_org.ssgproject.content_rule_disable_host_auth
