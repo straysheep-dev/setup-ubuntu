@@ -821,9 +821,10 @@ function installPackages() {
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
 
 	if [ "$VPS" = "true" ]; then
-		sudo apt install -y aide auditd easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
+		sudo apt install -y aide auditd cryptsetup easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
 
 	elif [ "$HW" = "true" ]; then
+		# snap
 		if (command -v snap > /dev/null); then
 			sudo apt autoremove --purge -y eog gedit
 			if (sudo snap install eog); then
@@ -843,7 +844,12 @@ function installPackages() {
 				fi
 			fi
 		fi
-		sudo apt install -y aide auditd apparmor-utils curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+		# flatpak
+		if (command -v evince > /dev/null); then
+			sudo apt autoremove --purge -y evince
+			echo -e "${YELLOW}[i]${RESET}Evince apt pacakge removed. Replace with: flatpak install org.gnome.Evince${RESET}"
+		fi
+		sudo apt install -y aide auditd apparmor-utils cryptsetup curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
 		System76PPA
 		installFlatpak
 
@@ -851,7 +857,8 @@ function installPackages() {
 		if (sudo dmesg | grep -q 'vmware'); then
 			sudo apt install -y open-vm-tools-desktop
 		fi
-		sudo apt install -y aide auditd apparmor-utils curl gimp git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		sudo apt install -y aide auditd apparmor-utils cryptsetup curl gimp git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		# snap
 		if (command -v snap > /dev/null); then
 			sudo apt autoremove --purge -y eog gedit
 
@@ -910,6 +917,12 @@ function installPackages() {
 			fi
 
 		fi
+		# flatpak
+		if (command -v evince > /dev/null); then
+			sudo apt autoremove --purge -y evince
+			echo -e "${YELLOW}[i]${RESET}Evince apt pacakge removed. Replace with: flatpak install org.gnome.Evince${RESET}"
+		fi
+
 		# Add third party package functions from above below here
 		installPdfTools
 		installFlatpak
