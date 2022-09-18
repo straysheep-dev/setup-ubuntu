@@ -276,7 +276,7 @@ function setPerms() {
 function checkSudoers() {
 	# Applies to pre-installed Raspberry Pi images
 	# and cloud images where /etc/sudoers.d/90-init-cloud-users has 'NOPASSWD:ALL' set
-	
+
 	for file in /etc/sudoers.d/* ; do
 		if (sudo grep -q "^$USERNAME ALL=(ALL) NOPASSWD:ALL$" "$file"); then
 			echo -e "${BLUE}[i]${RESET}Found 'NOPASSWD:ALL' set for '$USERNAME' in $file."
@@ -768,6 +768,25 @@ Pin-Priority: 1001' | sudo tee /etc/apt/preferences.d/system76-apt-preferences
 
 }
 
+function YubicoPPA() {
+
+	echo -e "${GREEN}[i]Adding Yubico software packages...${RESET}"
+
+	sudo apt-add-repository -y ppa:yubico/stable
+
+	if ! (gpg /etc/apt/trusted.gpg.d/yubico-ubuntu-stable.gpg | grep '3653 E210 64B1 9D13 4466  702E 43D5 C495 32CB A1A9'); then
+		echo -e "${RED}[i]Yubico signing key has an unexpected fingerprint.${RESET}"
+		return 1
+	else
+		echo -e "[${GREEN}OK${RESET}]"
+
+	fi 2>/dev/null
+
+	sudo apt-get update
+	sudo apt install yubikey-manager
+
+}
+
 function installFlatpak() {
 
 	echo -e "${GREEN}[i]Adding Flatpak...${RESET}"
@@ -821,7 +840,7 @@ function installPackages() {
 	echo -e "${BLUE}[i]${RESET}Beginning installation of essential packages."
 
 	if [ "$VPS" = "true" ]; then
-		sudo apt install -y aide auditd cryptsetup easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
+		sudo apt install -y aide auditd chkrootkit cryptsetup easy-rsa libpam-google-authenticator openvpn qrencode resolvconf rkhunter tmux wireguard
 
 	elif [ "$HW" = "true" ]; then
 		# snap
@@ -849,15 +868,16 @@ function installPackages() {
 			sudo apt autoremove --purge -y evince
 			echo -e "${YELLOW}[i]${RESET}Evince apt pacakge removed. Replace with: flatpak install org.gnome.Evince${RESET}"
 		fi
-		sudo apt install -y aide auditd apparmor-utils cryptsetup curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+		sudo apt install -y aide auditd apparmor-utils chkrootkit cryptsetup curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
 		System76PPA
+		YubicoPPA
 		installFlatpak
 
 	elif [ "$VM" = "true" ]; then
 		if (sudo dmesg | grep -q 'vmware'); then
 			sudo apt install -y open-vm-tools-desktop
 		fi
-		sudo apt install -y aide auditd apparmor-utils cryptsetup curl gimp git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		sudo apt install -y aide auditd apparmor-utils chkrootkit cryptsetup curl git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
 		# snap
 		if (command -v snap > /dev/null); then
 			sudo apt autoremove --purge -y eog gedit
@@ -925,6 +945,7 @@ function installPackages() {
 
 		# Add third party package functions from above below here
 		installPdfTools
+		YubicoPPA
 		installFlatpak
 	fi
 	echo -e "${BLUE}[+]${RESET}All essential packages installed.${RESET}"
