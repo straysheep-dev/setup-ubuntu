@@ -73,5 +73,5 @@ gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-right "['<Prima
 gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-up "['<Primary><Super><Shift>Up']"
 
 # Ensure switching applications is set to [Shift + ]Super + Tab, typically the default
-org.gnome.desktop.wm.keybindings switch-applications-backward "['<Super><Shift>Tab']"
-org.gnome.desktop.wm.keybindings switch-applications "['<Super>Tab']"
+gsettings set org.gnome.desktop.wm.keybindings switch-applications-backward "['<Super><Shift>Tab']"
+gsettings set org.gnome.desktop.wm.keybindings switch-applications "['<Super>Tab']"
