@@ -19,6 +19,8 @@ BLUE="\033[01;34m"     # Success
 BOLD="\033[01;01m"     # Highlight
 RESET="\033[00m"       # Normal
 
+USERNAME="$(grep "$EUID" /etc/passwd | cut -d ':' -f 1)"
+
 #PUB_IPV4=$(ip -4 addr | sed -ne 's|^.* inet \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 #PUB_IPV6=$(ip -6 addr | sed -ne 's|^.* inet6 \([^/]*\)/.* scope global.*$|\1|p' | head -1)
 PUB_NIC="$(ip -4 route ls | grep default | grep -Po '(?<=dev )(\S+)' | head -1)"
@@ -634,96 +636,68 @@ function setResolver() {
 	fi
 }
 
-function installPdfTools() {
+function installParsingUtils() {
 
-	# pdftools
-	# Update these values when newer versions are available
-	PDF_TOOLS_DIR="/opt/pdftools"
-	PDFID_HASH="bb3898900e31a427bcd67629e7fc7acfe1a2e3fd0400bd1923e8b86eda5cb118"
-	PDFID_GIT="cc64a213aa40162f8072b95ab80bdbf67c1afaf5"
-	PDFID_DIR="/opt/pdftools/pdfid"
-	PDFPARSER_HASH="ca0145cd48e4b9b3e8d10aefe2805ac66b500eac51597044bb432507fc68a0b7"
-	PDFPARSER_GIT="1d7ee54ffeb50293f3721f3682685328f5cf5a08"
-	PDFPARSER_DIR="/opt/pdftools/pdf-parser"
+	# https://github.com/DidierStevens/DidierStevensSuite
+	# Source code put in public domain by Didier Stevens, no Copyright
+	# https://DidierStevens.com
+	# Utilities to examine and parse files, this is a small set of tools from the DidierStevensSuite
+	PARSING_UTILS_DIR="/opt/parsing-utils"
+	PARSING_UTILS_ARCHIVE='parsing-utils.zip'
+	PARSING_UTILS_HASH="3bc293146ed0dd67a99a4fd3a0d4516ae3de5f60500383b7dfabe82f0ce90fad  $PARSING_UTILS_DIR/$PARSING_UTILS_ARCHIVE"
+	COMMIT_HASH='50de5599ad35ce9350b9b883ff4506130bbcc482'
 
-	if ! [ -e "$PDFID_DIR" -o -e "$PDFPARSER_DIR" ]; then
+	if ! [ -e "$PARSING_UTILS_DIR" ]; then
 		echo "======================================================================"
-		echo -e "${BLUE}[i]${RESET}Install pdftools?"
+		echo -e "${BLUE}[i]${RESET}Install file parsing utils?"
 		echo ""
-		until [[ $PDFTOOLS_CHOICE =~ ^(y|n)$ ]]; do
-			read -rp "[y/n]: " PDFTOOLS_CHOICE
+		until [[ $PARSING_UTILS_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " PARSING_UTILS_CHOICE
 		done
 
-		if [[ "$PDFTOOLS_CHOICE" == "y" ]]; then
+		if [[ "$PARSING_UTILS_CHOICE" == "y" ]]; then
 
-			echo -e "${BLUE}[i]Downloading pdftools...${RESET}"
+			echo -e "${BLUE}[i]Creating $PARSING_UTILS_DIR...${RESET}"
 
-			sudo mkdir "$PDF_TOOLS_DIR"
+			sudo mkdir "$PARSING_UTILS_DIR"
+			sudo chown "$USERNAME":"$USERNAME" "$PARSING_UTILS_DIR"
 
-			#======================================================================
+			echo -e "${BLUE}[i]Downloading parsing utils...${RESET}"
 
-			# pdfid
-			# Commit cc64a213aa40162f8072b95ab80bdbf67c1afaf5
-			curl -LfO https://gitlab.com/kalilinux/packages/pdfid/-/archive/"$PDFID_GIT"/pdfid-"$PDFID_GIT".zip
+			curl -Lf 'https://github.com/straysheep-dev/parsing-utils/archive/'"$COMMIT_HASH"'.zip' > "$PARSING_UTILS_DIR"/"$PARSING_UTILS_ARCHIVE"
 
-			if ! (sha256sum "$SETUPDIR/pdfid-$PDFID_GIT.zip" | grep -x "$PDFID_HASH  $SETUPDIR/pdfid-$PDFID_GIT.zip"); then
-				echo -e "${RED}[i]Bad checksum. Quitting.${RESET}"
-				exit 1
+			if ! (sha256sum "$PARSING_UTILS_DIR/$PARSING_UTILS_ARCHIVE" | grep -qx "$PARSING_UTILS_HASH" > /dev/null); then
+				echo -e "${RED}[i]Parsing utils archive has unexpected signature.${RESET}"
+				return
 			else
-				echo -e "${GREEN}[i]OK${RESET}"
+				echo -e "${GREEN}[OK]${RESET}"
 			fi
 
-			unzip "$SETUPDIR"/pdfid-"$PDFID_GIT".zip \
-			pdfid-"$PDFID_GIT"/pdfid.ini \
-			pdfid-"$PDFID_GIT"/pdfid.py \
-			pdfid-"$PDFID_GIT"/plugin_embeddedfile.py \
-			pdfid-"$PDFID_GIT"/plugin_list \
-			pdfid-"$PDFID_GIT"/plugin_nameobfuscation.py \
-			pdfid-"$PDFID_GIT"/plugin_triage.py \
-			pdfid-"$PDFID_GIT"/debian/copyright
+			echo -e "${BLUE}[>]Extracting archive...${RESET}"
+			unzip "$PARSING_UTILS_DIR"/"$PARSING_UTILS_ARCHIVE" -d "$PARSING_UTILS_DIR"
 
-			sudo mv "$SETUPDIR"/pdfid-"$PDFID_GIT" "$PDFID_DIR"
-			sudo chmod 755 "$PDFID_DIR"/pdfid.py
-			sudo ln -s "$PDFID_DIR"/pdfid.py /usr/local/bin/pdfid
+			# Remove the zip archive
+			find "$PARSING_UTILS_DIR" -type f -name "*.zip" -print0 | xargs -0 rm
+			# Move all files into the main folder
+			find "$PARSING_UTILS_DIR" -type f -print0 | xargs -0 mv -t "$PARSING_UTILS_DIR"
+			# Remove the empty archive directory
+			find "$PARSING_UTILS_DIR" -type d -name "*$COMMIT_HASH" -print0 | xargs -0 rm -rf
 
-			rm "$SETUPDIR"/pdfid-"$PDFID_GIT".zip
+			chmod 755 "$PARSING_UTILS_DIR"/*.py
 
-			# Change pdfid.py to python3
-			sudo sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFID_DIR"/pdfid.py
+			sudo chown root:root -R "$PARSING_UTILS_DIR"
 
-			#======================================================================
-
-			# pdf-parser
-			# Commit 1d7ee54ffeb50293f3721f3682685328f5cf5a08
-			curl -LfO https://gitlab.com/kalilinux/packages/pdf-parser/-/archive/"$PDFPARSER_GIT"/pdf-parser-"$PDFPARSER_GIT".zip
-
-			if ! (sha256sum "$SETUPDIR/pdf-parser-$PDFPARSER_GIT.zip" | grep -x "$PDFPARSER_HASH  $SETUPDIR/pdf-parser-$PDFPARSER_GIT.zip"); then
-				echo -e "${RED}[i]Bad checksum. Quitting.${RESET}"
-				exit 1
-			else
-				echo -e "${GREEN}[i]OK${RESET}"
-			fi
-
-			unzip "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT".zip \
-			pdf-parser-"$PDFPARSER_GIT"/pdf-parser.py \
-			pdf-parser-"$PDFPARSER_GIT"/debian/copyright \
-			pdf-parser-"$PDFPARSER_GIT"/debian/changelog
-
-			sudo mv "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT" "$PDFPARSER_DIR"
-			sudo chmod 755 "$PDFPARSER_DIR"/pdf-parser.py
-			sudo ln -s "$PDFPARSER_DIR"/pdf-parser.py /usr/local/bin/pdf-parser
-
-			rm "$SETUPDIR"/pdf-parser-"$PDFPARSER_GIT".zip
-
-			# Change pdf-parser.py to python3
-			sudo sed -i 's/#!\/usr\/bin\/env python/#!\/usr\/bin\/env python3/' "$PDFPARSER_DIR"/pdf-parser.py
-
-			#======================================================================
+			# Create symlinks
+			sudo ln -s "$PARSING_UTILS_DIR"/base64dump.py /usr/local/bin/base64dump
+			sudo ln -s "$PARSING_UTILS_DIR"/jpegdump.py /usr/local/bin/jpegdump
+			sudo ln -s "$PARSING_UTILS_DIR"/pdfid.py /usr/local/bin/pdfid
+			sudo ln -s "$PARSING_UTILS_DIR"/pdf-parser.py /usr/local/bin/pdf-parser
+			sudo ln -s "$PARSING_UTILS_DIR"/zipdump.py /usr/local/bin/zipdump
 
 			echo ""
 			echo -e "${BLUE}[i]Listing symlinks...${RESET}"
 			ls -l /usr/local/bin
-			echo -e "${BLUE}[i]pdftools installed.${RESET}"
+			echo -e "${BLUE}[✓]Parsing utils installed.${RESET}"
 			sleep 1
 		fi
 	fi
@@ -735,6 +709,17 @@ function System76PPA() {
 	# https://eclypsium.com/2022/07/26/firmware-security-realizations-part-1-secure-boot-and-dbx/
 	if ! (grep -qx 'System76' /sys/devices/virtual/dmi/id/sys_vendor); then
 		return
+	else
+		echo "======================================================================"
+		echo -e "${BLUE}[i]${RESET}Add the System76 PPA?"
+		echo ""
+		until [[ $SYSTEM76_PPA_CHOICE =~ ^(y|n)$ ]]; do
+			read -rp "[y/n]: " SYSTEM76_PPA_CHOICE
+		done
+
+		if [[ "$SYSTEM76_PPA_CHOICE" == "n" ]]; then
+			return
+		fi
 	fi
 
 	echo -e "${GREEN}[i]Adding System76 drivers...${RESET}"
@@ -944,7 +929,7 @@ function installPackages() {
 		fi
 
 		# Add third party package functions from above below here
-		installPdfTools
+		installParsingUtils
 		YubicoPPA
 		installFlatpak
 	fi
@@ -1725,7 +1710,7 @@ function installVM() {
 	checkNetworking
 	setFirewall
 	checkPackages
-	installPdfTools
+	installParsingUtils
 	setResolver
 	installPackages
 	addGroups
@@ -1758,7 +1743,7 @@ function installHW() {
 	checkNetworking
 	setFirewall
 	checkPackages
-	#installPdfTools
+	#installParsingUtils
 	setResolver
 	installPackages
 	#addGroups
@@ -1791,7 +1776,7 @@ function installVPS() {
 	checkNetworking
 	setFirewall
 	checkPackages
-	#installPdfTools
+	#installParsingUtils
 	setResolver
 	installPackages
 	#addGroups
