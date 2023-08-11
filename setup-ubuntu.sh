@@ -736,7 +736,7 @@ Pin-Priority: 1001' | sudo tee /etc/apt/preferences.d/system76-apt-preferences
 
 	sudo apt-add-repository -y ppa:system76-dev/stable
 
-	if ! (gpg /etc/apt/trusted.gpg.d/system76-dev_ubuntu_stable.gpg | grep '5D1F 3A80 254F 6AFB A254  FED5 ACD4 42D1 C8B7 748B'); then
+	if ! (gpg /etc/apt/trusted.gpg.d/system76-dev_ubuntu_stable.gpg | grep -Pq "5D1F(\s)?3A80(\s)?254F(\s)?6AFB(\s)?A254(\s+)?FED5(\s)?ACD4(\s)?42D1(\s)?C8B7(\s)?748B"); then
 		echo -e "${RED}[i]System76 signing key has an unexpected fingerprint.${RESET}"
 		return 1
 	else
@@ -759,7 +759,7 @@ function YubicoPPA() {
 
 	sudo apt-add-repository -y ppa:yubico/stable
 
-	if ! (gpg /etc/apt/trusted.gpg.d/yubico-ubuntu-stable.gpg | grep '3653 E210 64B1 9D13 4466  702E 43D5 C495 32CB A1A9'); then
+	if ! (gpg /etc/apt/trusted.gpg.d/yubico-ubuntu-stable.gpg | grep -Pq "3653(\s)?E210(\s)?64B1(\s)?9D13(\s)?4466(\s+)?702E(\s)?43D5(\s)?C495(\s)?32CB(\s)?A1A9"); then
 		echo -e "${RED}[i]Yubico signing key has an unexpected fingerprint.${RESET}"
 		return 1
 	else
@@ -792,7 +792,7 @@ function installFlatpak() {
 	# Also not a bad idea to add the collection ID to this remote for creating offline versions of installed apps for backup:
 	sudo flatpak remote-modify --collection-id=org.flathub.Stable flathub
 
-	if ! (gpg /var/lib/flatpak/repo/flathub.trustedkeys.gpg 2>/dev/null | grep -q '6E5C 05D9 79C7 6DAF 93C0  8135 4184 DD4D 907A 7CAE' > /dev/null); then
+	if ! (gpg /var/lib/flatpak/repo/flathub.trustedkeys.gpg 2>/dev/null | grep -Pq "6E5C(\s)?05D9(\s)?79C7(\s)?6DAF(\s)?93C0(\s+)?8135(\s)?4184(\s)?DD4D(\s)?907A(\s)?7CAE" > /dev/null); then
 		echo -e "${RED}[i]Flatpak signing key has an unexpected fingerprint.${RESET}"
 	fi
 
@@ -853,7 +853,7 @@ function installPackages() {
 			sudo apt autoremove --purge -y evince
 			echo -e "${YELLOW}[i]${RESET}Evince apt pacakge removed. Replace with: flatpak install org.gnome.Evince${RESET}"
 		fi
-		sudo apt install -y aide auditd apparmor-utils chkrootkit cryptsetup curl git libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
+		sudo apt install -y aide auditd apparmor-utils chkrootkit cryptsetup curl git libimage-exiftool-perl libpam-google-authenticator pcscd resolvconf rkhunter scdaemon tmux usb-creator-gtk usbguard wireguard
 		System76PPA
 		YubicoPPA
 		installFlatpak
@@ -862,7 +862,7 @@ function installPackages() {
 		if (sudo dmesg | grep -q 'vmware'); then
 			sudo apt install -y open-vm-tools-desktop
 		fi
-		sudo apt install -y aide auditd apparmor-utils chkrootkit cryptsetup curl git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv resolvconf rkhunter scdaemon screen tmux usbguard wireguard wireshark
+		sudo apt install -y aide auditd apparmor-utils chkrootkit cryptsetup curl git hexedit libimage-exiftool-perl libpam-google-authenticator nmap pcscd poppler-utils python3-pip python3-venv qrencode resolvconf rkhunter scdaemon screen tmux wireguard wireshark
 		# snap
 		if (command -v snap > /dev/null); then
 			sudo apt autoremove --purge -y eog gedit
